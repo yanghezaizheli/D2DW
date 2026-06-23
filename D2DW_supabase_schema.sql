@@ -134,15 +134,21 @@ alter table visits      enable row level security;
 alter table assignments enable row level security;
 
 -- members: 自分の行を読める／更新できる。全員の名前は読める（担当表示用）。
+drop policy if exists members_select_all on members;
 create policy members_select_all on members for select to authenticated using (true);
+drop policy if exists members_self_upsert on members;
 create policy members_self_upsert on members for insert to authenticated with check (id = auth.uid());
+drop policy if exists members_self_update on members;
 create policy members_self_update on members for update to authenticated using (id = auth.uid());
 
 -- blocks / places: 全員が閲覧可
+drop policy if exists blocks_select on blocks;
 create policy blocks_select on blocks for select to authenticated using (true);
+drop policy if exists places_select on places;
 create policy places_select on places for select to authenticated using (true);
 
 -- blocks / places の編集: 管理者、または当該区域の担当者のみ
+drop policy if exists places_write on places;
 create policy places_write on places for all to authenticated
   using (
     exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin')
@@ -153,23 +159,30 @@ create policy places_write on places for all to authenticated
     or exists (select 1 from assignments a where a.member_id = auth.uid() and a.block_id = places.block_id)
   );
 
+drop policy if exists blocks_write on blocks;
 create policy blocks_write on blocks for all to authenticated
   using (exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'))
   with check (exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'));
 
 -- visits: 全員閲覧可。追加は本人として。修正/削除は本人または管理者。
+drop policy if exists visits_select on visits;
 create policy visits_select on visits for select to authenticated using (true);
+drop policy if exists visits_insert on visits;
 create policy visits_insert on visits for insert to authenticated
   with check (member_id = auth.uid());
+drop policy if exists visits_update on visits;
 create policy visits_update on visits for update to authenticated
   using (member_id = auth.uid()
          or exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'));
+drop policy if exists visits_delete on visits;
 create policy visits_delete on visits for delete to authenticated
   using (member_id = auth.uid()
          or exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'));
 
 -- assignments: 閲覧は全員、編集は管理者
+drop policy if exists assign_select on assignments;
 create policy assign_select on assignments for select to authenticated using (true);
+drop policy if exists assign_write on assignments;
 create policy assign_write  on assignments for all to authenticated
   using (exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'))
   with check (exists (select 1 from members m where m.id = auth.uid() and m.role = 'admin'));
