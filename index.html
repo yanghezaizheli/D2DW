@@ -249,25 +249,42 @@ async function onLogin(user){
   updatePendingUI(); flushQueue();
 }
 
-/* ---------- データ取得 ---------- */
+/* ---------- データ取得（＋オフライン用キャッシュ） ---------- */
+const CK_BLOCKS='d2dw_cache_blocks', CK_STATS='d2dw_cache_stats', CK_TS='d2dw_cache_ts';
+function cacheData(){ try{
+  localStorage.setItem(CK_BLOCKS, JSON.stringify(state.blocks));
+  localStorage.setItem(CK_STATS, JSON.stringify(state.stats));
+  localStorage.setItem(CK_TS, new Date().toISOString());
+}catch(e){} }
+function loadCache(){ try{
+  const b=JSON.parse(localStorage.getItem(CK_BLOCKS)||'null');
+  const s=JSON.parse(localStorage.getItem(CK_STATS)||'null');
+  if(b&&s){ state.blocks=b; state.stats=s; state.byId=Object.fromEntries(s.map(r=>[r.place_id,r])); return localStorage.getItem(CK_TS); }
+}catch(e){} return null; }
 async function loadAll(){
-  const [b, s] = await Promise.all([
-    sb.from('blocks').select('*').order('name'),
-    sb.from('place_stats').select('*'),
-  ]);
-  if(b.error) return toast('区域取得エラー: '+b.error.message);
-  if(s.error) return toast('データ取得エラー: '+s.error.message);
-  state.blocks = b.data||[];
-  state.stats = s.data||[];
-  state.byId = Object.fromEntries(state.stats.map(r=>[r.place_id, r]));
-  renderBroad();
+  try{
+    const [b, s] = await Promise.all([
+      sb.from('blocks').select('*').order('name'),
+      sb.from('place_stats').select('*'),
+    ]);
+    if(b.error || s.error) throw (b.error||s.error);
+    state.blocks = b.data||[];
+    state.stats = s.data||[];
+    state.byId = Object.fromEntries(state.stats.map(r=>[r.place_id, r]));
+    cacheData();
+    renderBroad();
+  }catch(e){
+    const ts=loadCache();
+    if(ts){ renderBroad(); toast('オフライン: 前回のデータを表示（'+fmtDateTime(ts)+'）'); }
+    else { toast('データ取得に失敗しました（オフライン時は一度オンラインで開いてください）'); }
+  }
 }
 let refreshTimer;
 async function refreshStats(){
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(async ()=>{
     const { data } = await sb.from('place_stats').select('*');
-    if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); rerender(); }
+    if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); rerender(); }
   }, 250);
 }
 
@@ -480,7 +497,7 @@ $('#saveBtn').addEventListener('click', async ()=>{
 });
 async function refreshNow(){
   const { data } = await sb.from('place_stats').select('*');
-  if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); }
+  if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); }
 }
 
 /* ---------- オフライン送信待ちキュー（記録の取りこぼし防止） ---------- */
