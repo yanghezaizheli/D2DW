@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#2f6f4f">
 <title>D2DW 戸別訪問記録</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="D2DW">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root{--brand:#2f6f4f;--green:#2e9e6b;--blue:#3b73c4;--amber:#d98a2b;--grey:#8a8a8a;--red:#c0473b;
@@ -240,6 +246,7 @@ async function onLogin(user){
   catch(e){ console.warn('member upsert skipped', e); }
   await loadAll();
   go('broad'); initBroad(); subscribeRealtime();
+  updatePendingUI(); flushQueue();
 }
 
 /* ---------- データ取得 ---------- */
@@ -457,10 +464,16 @@ document.querySelectorAll('.obtn').forEach(btn=> btn.addEventListener('click', (
 }));
 $('#saveBtn').addEventListener('click', async ()=>{
   if(!state.sel) return; $('#saveBtn').disabled=true;
-  const { error } = await sb.from('visits').insert({ place_id:state.curPlace, outcome:state.sel, member_id:state.user.id, note:$('#recNote').value.trim()||null });
-  if(error){ toast('保存失敗: '+error.message); $('#saveBtn').disabled=false; return; }
-  toast('記録しました（同期）');
-  await refreshNow();
+  const rec={ place_id:state.curPlace, outcome:state.sel, member_id:state.user.id, note:$('#recNote').value.trim()||null, visited_at:new Date().toISOString() };
+  let queued=false;
+  if(!navigator.onLine){ enqueue(rec); queued=true; }
+  else {
+    const { error } = await sb.from('visits').insert(rec);
+    if(error){ enqueue(rec); queued=true; console.warn('insert失敗→送信待ちへ', error); }
+  }
+  toast(queued ? 'オフラインのため送信待ちに保存（復帰時に自動送信）' : '記録しました（同期）');
+  if(!queued) await refreshNow();
+  updatePendingUI();
   go(state.recFrom==='apt'?'apt':'block');
   if(state.recFrom==='apt') openApt(state.curApt); else { renderPlaceList(state.curBlock); initDetailMap(state.curBlock); }
   renderBroad();
@@ -469,6 +482,26 @@ async function refreshNow(){
   const { data } = await sb.from('place_stats').select('*');
   if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); }
 }
+
+/* ---------- オフライン送信待ちキュー（記録の取りこぼし防止） ---------- */
+const QKEY='d2dw_pending';
+function loadQueue(){ try{ return JSON.parse(localStorage.getItem(QKEY)||'[]'); }catch(e){ return []; } }
+function saveQueue(q){ try{ localStorage.setItem(QKEY, JSON.stringify(q)); }catch(e){} }
+function enqueue(rec){ const q=loadQueue(); q.push(rec); saveQueue(q); }
+function updatePendingUI(){ const n=loadQueue().length, el=$('#rtState'); if(el && n>0) el.textContent='●送信待ち '+n; }
+async function flushQueue(){
+  if(!sb || !state.user) return;
+  const q=loadQueue(); if(!q.length) return;
+  const remain=[];
+  for(const rec of q){
+    try{ const { error }=await sb.from('visits').insert(rec); if(error) remain.push(rec); }
+    catch(e){ remain.push(rec); }
+  }
+  saveQueue(remain);
+  if(remain.length<q.length){ await refreshNow(); rerender(); renderBroad(); toast('送信待ちを同期しました'); }
+  updatePendingUI();
+}
+window.addEventListener('online', flushQueue);
 
 /* ---------- リアルタイム同期 ---------- */
 function subscribeRealtime(){
@@ -487,6 +520,11 @@ document.querySelectorAll('[data-go]').forEach(b=> b.addEventListener('click', (
 $('#editPinBtn').addEventListener('click', toggleEdit);
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let toastT; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1900); }
+
+/* ---------- PWA: Service Worker 登録（オフライン対応・ホーム追加） ---------- */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW登録に失敗', e));
+}
 </script>
 </body>
 </html>
