@@ -95,31 +95,89 @@ create index if not exists idx_visits_place    on visits(place_id);
 create index if not exists idx_visits_visited  on visits(place_id, visited_at desc);
 
 -- ============================================================
+-- 7.5) タイプ別の再訪間隔（visit_rules）＋ type 列
+--    「今訪問してよいか(is_due)」を前回結果×タイプの間隔で自動判定する。
+--    タイプ: LDR=戸建てエリア / ST-M・EV-M・AL-M=集合住宅系（暫定値・要確認）
+-- ============================================================
+alter table blocks add column if not exists type text;   -- 区域/エリアのタイプ
+alter table places add column if not exists type text;   -- 建物個別のタイプ上書き（任意）
+
+create table if not exists visit_rules (
+  type        text primary key,
+  absent_days int not null,   -- 不在のあと再訪可になるまでの日数
+  flyer_days  int not null,   -- 投函のあと
+  met_days    int not null    -- 会えたのあと
+);
+insert into visit_rules (type, absent_days, flyer_days, met_days) values
+  ('LDR', 30, 30,  90),
+  ('ST-M',90, 30, 180),
+  ('EV-M',90, 30, 180),
+  ('AL-M',90, 30, 180)
+on conflict (type) do update set
+  absent_days=excluded.absent_days, flyer_days=excluded.flyer_days, met_days=excluded.met_days;
+
+-- visit_rules は設定値。ログイン済みなら誰でも参照可（security_invoker ビューから読むため）。
+alter table visit_rules enable row level security;
+drop policy if exists visit_rules_select on visit_rules;
+create policy visit_rules_select on visit_rules for select to authenticated using (true);
+
+-- ============================================================
 -- 8) 集計ビュー（place_stats）
---    カード表示用: 前回訪問日時 / 前回面会日時 / 累計不在回数 / 件数
+--    カード表示用: 前回訪問/前回面会/累計不在/件数/前回結果
+--    ＋自動判定: next_visitable_at（次に訪問可になる日時）/ is_due（今訪問可か）
 -- ============================================================
 -- 注: 列の追加・並べ替えに備え drop してから作成（create or replace は列の挿入/改名が不可）
 drop view if exists place_stats;
 create view place_stats as
+with agg as (
+  select
+    p.id          as place_id,
+    p.block_id,
+    p.kind,
+    p.parent_id,
+    p.label,
+    p.display_name,
+    p.address,
+    p.map_x,
+    p.map_y,
+    p.status,
+    p.note,
+    -- 有効タイプ: 建物個別 > 区域 > 種別からの既定（戸建て=LDR / それ以外=EV-M）
+    coalesce(p.type, b.type, case when p.kind = '戸建て' then 'LDR' else 'EV-M' end) as eff_type,
+    max(v.visited_at)                                     as last_visit_at,
+    max(v.visited_at) filter (where v.outcome = '会えた') as last_met_at,
+    count(*)          filter (where v.outcome = '不在')   as absent_count,
+    count(v.id)                                           as visit_count,
+    (array_agg(v.outcome order by v.visited_at desc)
+       filter (where v.id is not null))[1]                as last_outcome
+  from places p
+  join blocks b on b.id = p.block_id
+  left join visits v on v.place_id = p.id
+  group by p.id, b.type
+)
 select
-  p.id                                            as place_id,
-  p.block_id,
-  p.kind,
-  p.parent_id,
-  p.label,
-  p.display_name,
-  p.address,
-  p.map_x,
-  p.map_y,
-  p.status,
-  p.note,
-  max(v.visited_at)                                as last_visit_at,
-  max(v.visited_at) filter (where v.outcome = '会えた') as last_met_at,
-  count(*)          filter (where v.outcome = '不在')   as absent_count,
-  count(v.id)                                      as visit_count
-from places p
-left join visits v on v.place_id = p.id
-group by p.id;
+  a.*,
+  case a.last_outcome
+    when '会えた' then a.last_visit_at + (r.met_days    || ' days')::interval
+    when '不在'   then a.last_visit_at + (r.absent_days || ' days')::interval
+    when '投函'   then a.last_visit_at + (r.flyer_days  || ' days')::interval
+    else null
+  end as next_visitable_at,
+  (
+    coalesce(a.status, '訪問可能') = '訪問可能'
+    and (
+      a.last_visit_at is null
+      or now() >= a.last_visit_at + (
+        case a.last_outcome
+          when '会えた' then r.met_days
+          when '不在'   then r.absent_days
+          when '投函'   then r.flyer_days
+          else 0
+        end || ' days')::interval
+    )
+  ) as is_due
+from agg a
+left join visit_rules r on r.type = a.eff_type;
 
 -- ============================================================
 -- 9) RLS（行レベルセキュリティ）

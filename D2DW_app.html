@@ -122,7 +122,7 @@
     <div class="bar"><h1>戸別訪問記録 <span class="sub" id="meName"></span></h1><button class="mini" id="signoutBtn">ログアウト</button></div>
     <div id="broadMap" class="map" style="height:260px"></div>
     <div class="fab" id="locateBtn">📍 現在地</div>
-    <div class="legend"><span><i style="background:var(--green)"></i>未面会あり</span><span><i style="background:var(--blue)"></i>完了</span><span id="rtState">●同期待機</span></div>
+    <div class="legend"><span><i style="background:var(--green)"></i>訪問可能あり</span><span><i style="background:var(--blue)"></i>対象なし</span><span id="rtState">●同期待機</span></div>
     <div class="sectiontitle">区域一覧</div>
     <div id="blockList" class="list"></div>
   </section>
@@ -268,12 +268,11 @@ async function refreshStats(){
 const leaves = bid => state.stats.filter(r=>r.block_id===bid && (r.kind==='戸建て'||r.kind==='号室'));
 const childrenOf = pid => state.stats.filter(r=>r.parent_id===pid);
 function statusInfo(r){
-  if(r.last_met_at) return {label:'面会済', cls:'b-blue'};
-  if((r.absent_count||0)>=3) return {label:'不在多', cls:'b-amber'};
   const s = r.status||'訪問可能';
-  if(s==='訪問可能') return {label:'訪問可能', cls:'b-green'};
-  if(s==='訪問拒否') return {label:'訪問拒否', cls:'b-red'};
-  return {label:s, cls:'b-grey'};
+  if(s==='訪問拒否') return {label:'訪問拒否', cls:'b-red', sub:''};
+  if(s!=='訪問可能')  return {label:s, cls:'b-grey', sub:''};   // 他言語/JW/転居・空家など（手動・固定）
+  if(r.is_due)        return {label:'訪問可能', cls:'b-green', sub:''};
+  return {label:'対象外', cls:'b-grey', sub: r.next_visitable_at ? '次回訪問可 '+fmtDate(r.next_visitable_at) : ''};
 }
 const p2=n=>String(n).padStart(2,'0');
 function fmtDate(s){ if(!s) return '—'; const d=new Date(s); return `${d.getFullYear()}/${p2(d.getMonth()+1)}/${p2(d.getDate())}`; }
@@ -283,11 +282,11 @@ function fmtDateTime(s){ if(!s) return '—'; const d=new Date(s); return `${d.g
 function renderBroad(){
   const el=$('#blockList'); el.innerHTML='';
   state.blocks.forEach(b=>{
-    const lv=leaves(b.id), met=lv.filter(r=>r.last_met_at).length, rem=lv.length-met;
-    const cls=rem>0?'b-green':'b-blue';
+    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
+    const cls=due>0?'b-green':'b-blue';
     const div=document.createElement('div'); div.className='card blockcard'; div.onclick=()=>openBlock(b.id);
-    div.innerHTML=`<div class="main"><div class="name">${esc(b.name)} <span class="badge ${cls}">${rem>0?'未面会 '+rem:'完了'}</span></div>
-      <div class="meta">区域番号 ${esc(b.code||'')} ・ 全 <b>${lv.length}</b> 戸 / 面会済 <b>${met}</b></div></div><div class="chev">›</div>`;
+    div.innerHTML=`<div class="main"><div class="name">${esc(b.name)} <span class="badge ${cls}">${due>0?'訪問可能 '+due:'対象なし'}</span></div>
+      <div class="meta">区域番号 ${esc(b.code||'')} ・ 全 <b>${lv.length}</b> 戸 / 今訪問可 <b>${due}</b></div></div><div class="chev">›</div>`;
     el.appendChild(div);
   });
 }
@@ -298,10 +297,10 @@ function initBroad(){
   broadMap=L.map('broadMap',{zoomControl:true}).setView(c,16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(broadMap);
   withxy.forEach(b=>{
-    const lv=leaves(b.id), rem=lv.length-lv.filter(r=>r.last_met_at).length;
-    const color=rem>0?'#2e9e6b':'#3b73c4';
+    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
+    const color=due>0?'#2e9e6b':'#3b73c4';
     const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
-      html:`<div class="pin" style="background:${color}"><span>${rem||'✓'}</span></div>`});
+      html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
     L.marker([b.lat,b.lng],{icon}).addTo(broadMap).on('click',()=>openBlock(b.id)).bindTooltip(b.name,{direction:'top',offset:[0,-24]});
   });
 }
@@ -320,8 +319,8 @@ function openBlock(id){
   state.curBlock=id; const b=state.blocks.find(x=>x.id===id);
   state.editMode=false; state.editSel=null; $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
   $('#blockTitle').innerHTML=`${esc(b.name)} <span class="sub">区域 ${esc(b.code||'')}</span>`;
-  const lv=leaves(id), met=lv.filter(r=>r.last_met_at).length;
-  $('#blockProgress').textContent=`各戸カード（全 ${lv.length} 戸 / 面会済 ${met} / 残り ${lv.length-met}）`;
+  const lv=leaves(id), due=lv.filter(r=>r.is_due).length;
+  $('#blockProgress').textContent=`各戸カード（全 ${lv.length} 戸 / 訪問可能 ${due} / 対象外 ${lv.length-due}）`;
   renderPlaceList(id); go('block'); setTimeout(()=>initDetailMap(id),60);
 }
 function renderPlaceList(id){
@@ -329,11 +328,11 @@ function renderPlaceList(id){
   state.stats.filter(r=>r.block_id===id && (r.kind==='戸建て'||r.kind==='集合住宅')).forEach(r=>{
     const div=document.createElement('div'); div.className='card';
     if(r.kind==='集合住宅'){
-      const kids=childrenOf(r.place_id), met=kids.filter(k=>k.last_met_at).length;
+      const kids=childrenOf(r.place_id), due=kids.filter(k=>k.is_due).length;
       let last=null; kids.forEach(k=>{ if(k.last_visit_at){ const t=new Date(k.last_visit_at); if(!last||t>last) last=t; }});
       div.onclick=()=>openApt(r.place_id);
       div.innerHTML=`<div class="main"><div class="name">${esc(r.display_name||'')} <span class="apttag">集合住宅</span></div>
-        <div class="meta">全 <b>${kids.length}</b> 室 / 面会済 <b>${met}</b> ・ 残り <b>${kids.length-met}</b><br>前回訪問: <b>${last?fmtDate(last):'—'}</b></div></div><div class="chev">›</div>`;
+        <div class="meta">全 <b>${kids.length}</b> 室 / 今訪問可 <b>${due}</b><br>前回訪問: <b>${last?fmtDate(last):'—'}</b></div></div><div class="chev">›</div>`;
     } else {
       div.onclick=()=>openRecord(r.place_id,'block'); div.innerHTML=cardInner(r);
     }
@@ -343,7 +342,7 @@ function renderPlaceList(id){
 function cardInner(r){
   const si=statusInfo(r);
   return `<div class="main"><div class="name">${esc(r.label||r.display_name||'')} <span class="badge ${si.cls}">${si.label}</span></div>
-    <div class="meta">前回訪問 <b>${fmtDate(r.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(r.last_met_at)}</b><br>累計不在 <b>${r.absent_count||0}回</b></div></div><div class="chev">›</div>`;
+    <div class="meta">前回訪問 <b>${fmtDate(r.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(r.last_met_at)}</b><br>累計不在 <b>${r.absent_count||0}回</b>${si.sub?' ・ '+si.sub:''}</div></div><div class="chev">›</div>`;
 }
 function initDetailMap(id){
   if(detailMap){ detailMap.remove(); detailMap=null; }
@@ -421,13 +420,13 @@ function detailSvg(W,H){
 
 /* ---------- 画面4: 号室 ---------- */
 function openApt(id){
-  state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), met=kids.filter(k=>k.last_met_at).length;
+  state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">集合住宅</span>`;
-  $('#aptInfo').textContent=`全 ${kids.length} 室 / 面会済 ${met} ・ 残り ${kids.length-met}。記録方法は各戸と同じです。`;
+  $('#aptInfo').textContent=`全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
   const el=$('#unitList'); el.innerHTML='';
   kids.forEach(u=>{ const si=statusInfo(u); const div=document.createElement('div'); div.className='card'; div.onclick=()=>openRecord(u.place_id,'apt');
     div.innerHTML=`<div class="main"><div class="name">${esc(u.label||u.display_name||'')}号室 <span class="badge ${si.cls}">${si.label}</span></div>
-      <div class="meta">前回訪問 <b>${fmtDate(u.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(u.last_met_at)}</b> ・ 不在 <b>${u.absent_count||0}回</b></div></div><div class="chev">›</div>`;
+      <div class="meta">前回訪問 <b>${fmtDate(u.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(u.last_met_at)}</b> ・ 不在 <b>${u.absent_count||0}回</b>${si.sub?'<br>'+si.sub:''}</div></div><div class="chev">›</div>`;
     el.appendChild(div); });
   go('apt');
 }
