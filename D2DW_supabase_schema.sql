@@ -97,7 +97,8 @@ create index if not exists idx_visits_visited  on visits(place_id, visited_at de
 -- ============================================================
 -- 7.5) タイプ別の再訪間隔（visit_rules）＋ type 列
 --    「今訪問してよいか(is_due)」を前回結果×タイプの間隔で自動判定する。
---    タイプ: LDR=戸建てエリア / ST-M・EV-M・AL-M=集合住宅系（暫定値・要確認）
+--    タイプ(-M=マンション): LDR=低密度住宅(戸建て＋小規模集合)
+--      / ST-M=階段式 / EV-M=エレベーター式 / AL-M=オートロック式マンション
 -- ============================================================
 alter table blocks add column if not exists type text;   -- 区域/エリアのタイプ
 alter table places add column if not exists type text;   -- 建物個別のタイプ上書き（任意）
