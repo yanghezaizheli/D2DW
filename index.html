@@ -148,7 +148,9 @@
   .blockmgr-actions .primarybtn{background:var(--brand);border-color:var(--brand);color:#fff}
   .blockmgr-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border-top:1px solid var(--line);padding:9px 0}
   .blockmgr-row .kind{font-size:11px;color:var(--sub);margin-top:2px}
-  .blockmgr-rowbtns{display:flex;gap:6px}
+  .blockmgr-rowbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .blockmgr-rowbtns .ordbtn{width:38px;padding:9px 0;font-size:15px}
+  .blockmgr-rowbtns .ordbtn:disabled{opacity:.3;cursor:default}
   .filebtn{display:block;text-align:center;width:100%;box-sizing:border-box;margin-top:8px}
   .filehint{font-size:12px;color:var(--sub);line-height:1.5;margin-top:6px}
   /* 新区域作成 */
@@ -194,6 +196,27 @@
     /* サイドバーは編集に集中できるよう少し大きめのチップ */
     body.pin-edit #editPanel .echip{font-size:14px;padding:6px 12px}
     body.pin-edit #editPanel .ehint{font-size:12px}
+  }
+  /* カード管理: PC向け2ペイン（地図=左 / カード管理=右）。スマホは従来のアコーディオン */
+  @media (min-width:760px){
+    body.card-manage #app{max-width:none;padding-bottom:0}
+    body.card-manage #s-block{
+      display:grid;height:100dvh;
+      grid-template-columns:1fr 440px;
+      grid-template-rows:auto 1fr;
+      grid-template-areas:"bar bar" "map panel";
+    }
+    body.card-manage #s-block .bar{grid-area:bar}
+    body.card-manage #s-block .mapwrap{grid-area:map;min-width:0;min-height:0;height:100%}
+    body.card-manage #s-block .map{height:100%!important;width:100%!important}
+    body.card-manage #s-block #blockManagePanel{
+      grid-area:panel;margin:0;overflow-y:auto;display:block!important;
+      border-left:1px solid var(--line);border-top:none;border-bottom:none;
+    }
+    body.card-manage #s-block .hint,
+    body.card-manage #s-block #editPanel,
+    body.card-manage #s-block #blockProgress,
+    body.card-manage #s-block #placeList{display:none}
   }
 </style>
 </head>
@@ -382,6 +405,9 @@ function go(name){
     state.editMode=false; state.editSel=null;
     $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
     document.body.classList.remove('pin-edit');
+  }
+  if(name!=='block' && document.body.classList.contains('card-manage')){  // カード管理から離れたら2ペイン解除
+    document.body.classList.remove('card-manage'); $('#blockManagePanel').style.display='none';
   }
   screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
 }
@@ -648,7 +674,7 @@ function openBlock(id){
   state.editMode=false; state.editSel=null; $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
   $('#blockManagePanel').style.display='none';
   $('#blockManageBtn').style.display = state.role==='admin' ? '' : 'none';
-  document.body.classList.remove('pin-edit');
+  document.body.classList.remove('pin-edit'); document.body.classList.remove('card-manage');
   $('#blockTitle').innerHTML=`${esc(b.name)} <span class="sub">区域 ${esc(b.code||'')}</span>`;
   const lv=leaves(id), due=lv.filter(r=>r.is_due).length;
   $('#blockProgress').textContent=`各戸カード（全 ${lv.length} 戸 / 訪問可能 ${due} / 対象外 ${lv.length-due}）`;
@@ -734,7 +760,7 @@ function toggleEdit(){
   state.editMode=!state.editMode; state.editSel=null;
   $('#editPinBtn').textContent = state.editMode ? '完了' : '📍 ピン編集';
   $('#editPanel').style.display = state.editMode ? 'block' : 'none';
-  if(state.editMode) $('#blockManagePanel').style.display='none';
+  if(state.editMode){ $('#blockManagePanel').style.display='none'; document.body.classList.remove('card-manage'); }
   document.body.classList.toggle('pin-edit', state.editMode);  // PC向け2ペイン全画面レイアウト切替
   if(state.editMode) renderEditPanel(state.curBlock);
   initDetailMap(state.curBlock);
@@ -759,9 +785,14 @@ function toggleBlockManage(){
   if(!state.curBlock) return;
   if(state.editMode) toggleEdit();
   const panel=$('#blockManagePanel');
-  const show=panel.style.display==='none';
+  const show=panel.style.display==='none' || panel.style.display==='';
   panel.style.display=show?'block':'none';
-  if(show){ state.editingPlaceId=null; state.editingPlace=null; renderBlockManagePanel(state.curBlock); }
+  document.body.classList.toggle('card-manage', show);   // PC向け2ペイン（地図左/カード右）
+  if(show){
+    state.editingPlaceId=null; state.editingPlace=null;
+    renderBlockManagePanel(state.curBlock);
+    setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },140);   // レイアウト変化に追従
+  }
 }
 const PLACE_FORM_TYPES=[['戸建て','戸建て'],['ST-M','集合住宅・階段'],['EV-M','集合住宅・エレベーター'],['AL-M','集合住宅・オートロック'],['MANSION','集合住宅・種別未設定']];
 const PLACE_STATUSES=['訪問可能','訪問拒否','他言語','JW','転居・空家'];
@@ -782,10 +813,13 @@ function renderBlockManagePanel(id){
   const fType=placeFormTypeValue(ed), fStatus=(ed&&ed.status)||'訪問可能';
   const typeOpts=PLACE_FORM_TYPES.map(([v,l])=>`<option value="${v}"${v===fType?' selected':''}>${l}</option>`).join('');
   const statusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===fStatus?' selected':''}>${s}</option>`).join('');
-  const rows=places.map(r=>{
+  const rows=places.map((r,i)=>{
     const kind=r.kind==='集合住宅' ? `集合住宅（${childrenOf(r.place_id).length}室）` : '戸建て';
     return `<div class="blockmgr-row"><div><b>${placeTitle(r)}</b><div class="kind">${kind}</div></div>`+
-      `<div class="blockmgr-rowbtns"><button class="editbtn" data-edit-place="${r.place_id}">編集</button>`+
+      `<div class="blockmgr-rowbtns">`+
+      `<button class="ordbtn" data-mv-card="up" data-pid="${r.place_id}"${i===0?' disabled':''}>↑</button>`+
+      `<button class="ordbtn" data-mv-card="down" data-pid="${r.place_id}"${i===places.length-1?' disabled':''}>↓</button>`+
+      `<button class="editbtn" data-edit-place="${r.place_id}">編集</button>`+
       `<button class="dangerbtn" data-del-place="${r.place_id}" data-label="${esc(r.display_name||r.label||'このカード')}">削除</button></div></div>`;
   }).join('');
   $('#blockManagePanel').innerHTML=
@@ -817,12 +851,33 @@ function renderBlockManagePanel(id){
   $('#detailMapFile').addEventListener('change', handleDetailMapFile);
   $('#autoCsvFile').addEventListener('change', handleAutoCsvFile);
   $('#deleteAllPlacesBtn').addEventListener('click', deleteAllBlockPlaces);
+  $('#blockManagePanel').querySelectorAll('[data-mv-card]').forEach(btn=>{
+    btn.addEventListener('click', ()=>moveCard(btn.dataset.pid, btn.dataset.mvCard));
+  });
   $('#blockManagePanel').querySelectorAll('[data-edit-place]').forEach(btn=>{
     btn.addEventListener('click', ()=>startEditPlace(btn.dataset.editPlace));
   });
   $('#blockManagePanel').querySelectorAll('[data-del-place]').forEach(btn=>{
     btn.addEventListener('click', ()=>deletePlaceCard(btn.dataset.delPlace, btn.dataset.label));
   });
+}
+async function moveCard(placeId, dir){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  const arr=blockTopPlaces(state.curBlock);
+  const i=arr.findIndex(r=>r.place_id===placeId); if(i<0) return;
+  const j = dir==='up'? i-1 : i+1; if(j<0 || j>=arr.length) return;
+  [arr[i],arr[j]]=[arr[j],arr[i]];
+  // 新しい並び順を sort_order に反映（変化した行だけ書き込み）
+  for(let idx=0; idx<arr.length; idx++){
+    const r=arr[idx];
+    if((r.sort_order??0)!==idx){
+      const { error } = await sb.from('places').update({sort_order:idx}).eq('id', r.place_id);
+      if(error){ toast('並び替え保存失敗（管理者権限が必要）: '+errText(error)); return; }
+      r.sort_order=idx;   // state.byId と同一参照なのでローカルにも反映
+    }
+  }
+  renderPlaceList(state.curBlock);
+  renderBlockManagePanel(state.curBlock);
 }
 async function startEditPlace(placeId){
   if(state.role!=='admin') return toast('管理者のみ実行できます');
