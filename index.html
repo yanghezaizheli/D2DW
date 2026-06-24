@@ -26,6 +26,15 @@
   .back,.mini{background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
   .screen{display:none}.screen.active{display:block}
   .map{width:100%;height:240px;background:#dde3df}
+  .mapwrap{position:relative}
+  .mapfull{position:absolute;right:10px;top:10px;z-index:650;background:#fff;border:1px solid var(--line);border-radius:8px;
+    width:38px;height:38px;font-size:18px;box-shadow:0 2px 6px rgba(0,0,0,.16);cursor:pointer;color:var(--text)}
+  .map.fullscreen-map{position:fixed!important;inset:0;width:100vw!important;height:100dvh!important;z-index:3000;background:#dde3df}
+  .mapfull-close{display:none;position:fixed;right:12px;top:12px;z-index:3010;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.22);cursor:pointer;color:var(--text)}
+  body.map-is-fullscreen{overflow:hidden}
+  body.map-is-fullscreen .mapfull{display:none}
+  body.map-is-fullscreen .mapfull-close{display:block}
   .sectiontitle{font-size:12px;color:var(--sub);padding:14px 16px 6px;font-weight:600}
   .list{padding:0 12px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;
@@ -92,6 +101,31 @@
   .setup code{background:#eceeec;padding:1px 5px;border-radius:4px;font-size:13px}
   .setup ol{padding-left:20px}
   .spin{padding:40px;text-align:center;color:var(--sub)}
+  /* 管理モーダル */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:flex-end;justify-content:center}
+  .modal-bg.hidden{display:none}
+  .modal{background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:88dvh;overflow:auto;padding:20px 16px 32px;display:flex;flex-direction:column;gap:12px}
+  .modal h3{margin:0;font-size:15px;font-weight:700}
+  .modal h4{margin:8px 0 0;font-size:13px;color:var(--brand)}
+  .modal-close{align-self:flex-end;background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);line-height:1;padding:0}
+  .danger{background:#c0473b;color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
+  .danger:active{opacity:.8}
+  .admin-grid{display:grid;grid-template-columns:1fr 110px;gap:8px}
+  .admin-grid .wide{grid-column:1 / -1}
+  .admin-grid input,.admin-grid select,.admin-note,.admin-csv{border:1px solid var(--line);border-radius:9px;padding:10px;font-size:14px;font-family:inherit}
+  .admin-note,.admin-csv{width:100%}
+  .admin-csv{min-height:86px;resize:vertical}
+  .admin-actions{display:flex;gap:8px}
+  .admin-actions button,.plainbtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;cursor:pointer}
+  .admin-actions .primarybtn{background:var(--brand);border-color:var(--brand);color:#fff;flex:1}
+  .userlist{display:flex;flex-direction:column;gap:8px}
+  .userrow{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center}
+  .userrow .name{font-size:14px;font-weight:700}
+  .userrow .email{font-size:12px;color:var(--sub);word-break:break-all;margin-top:2px}
+  .userrow .note{font-size:12px;color:var(--sub);margin-top:2px}
+  .userrow .rowactions{grid-column:1 / -1;display:flex;gap:8px}
+  .userrow .rowactions button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px;font-size:12px;font-weight:700}
+  .userrow .rowactions .del{color:var(--red)}
 </style>
 </head>
 <body>
@@ -125,8 +159,8 @@
 
   <!-- 広域マップ -->
   <section id="s-broad" class="screen">
-    <div class="bar"><h1>戸別訪問記録 <span class="sub" id="meName"></span></h1><button class="mini" id="signoutBtn">ログアウト</button></div>
-    <div id="broadMap" class="map" style="height:260px"></div>
+    <div class="bar"><h1>戸別訪問記録 <span class="sub" id="meName"></span></h1><button class="mini" id="adminBtn" style="display:none">⚙ 管理</button><button class="mini" id="signoutBtn">ログアウト</button></div>
+    <div class="mapwrap"><div id="broadMap" class="map" style="height:260px"></div><button class="mapfull" data-map-full="broadMap" aria-label="地図を全画面表示">⛶</button></div>
     <div class="fab" id="locateBtn">📍 現在地</div>
     <div class="legend"><span><i style="background:var(--green)"></i>訪問可能あり</span><span><i style="background:var(--blue)"></i>対象なし</span><span id="rtState">●同期待機</span></div>
     <div class="sectiontitle">区域一覧</div>
@@ -136,7 +170,7 @@
   <!-- 区域詳細 -->
   <section id="s-block" class="screen">
     <div class="bar"><button class="back" data-go="broad">← 区域</button><h1 id="blockTitle"></h1><button class="mini" id="editPinBtn">📍 ピン編集</button></div>
-    <div id="detailMap" class="map"></div>
+    <div class="mapwrap"><div id="detailMap" class="map"></div><button class="mapfull" data-map-full="detailMap" aria-label="地図を全画面表示">⛶</button></div>
     <div class="hint">地図ピン or 下のカードから記録できます。</div>
     <div id="editPanel" class="editpanel" style="display:none"></div>
     <div class="sectiontitle" id="blockProgress"></div>
@@ -172,6 +206,33 @@
   </section>
 </div>
 <div class="toast" id="toast"></div>
+<button class="mapfull-close" id="exitMapFullBtn">地図を閉じる</button>
+<div class="modal-bg hidden" id="adminModal">
+  <div class="modal">
+    <button class="modal-close" id="adminModalClose">✕</button>
+    <h3>管理メニュー</h3>
+    <h4>ユーザー追加</h4>
+    <div class="admin-grid">
+      <input class="wide" id="adminName" type="text" placeholder="ユーザー名">
+      <input id="adminEmail" type="email" placeholder="user@example.com">
+      <select id="adminRole"></select>
+    </div>
+    <input class="admin-note" id="adminNote" type="text" placeholder="メモ（任意）">
+    <div class="admin-actions"><button class="primarybtn" id="addUserBtn">ユーザーを追加</button><button id="reloadUsersBtn">再読込</button></div>
+
+    <h4>CSV/TSV一括追加</h4>
+    <textarea class="admin-csv" id="bulkUsersText" placeholder="email,name,role,note&#10;user1@example.com,山田太郎,利用者,01区域&#10;user2@example.com	佐藤花子	閲覧者	見学用"></textarea>
+    <input id="bulkUsersFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain">
+    <div class="admin-actions"><button class="primarybtn" id="bulkAddUsersBtn">一括追加</button><button id="clearBulkUsersBtn">クリア</button></div>
+
+    <h4>登録ユーザー一覧（名前・メール・権限）</h4>
+    <div class="userlist" id="adminUserList"><div class="hint" style="padding:0">読み込み中…</div></div>
+
+    <h4>危険な操作</h4>
+    <button class="danger" id="resetVisitsBtn">🗑 全訪問記録を削除</button>
+    <div style="font-size:12px;color:var(--sub)">※ visits テーブルの全行を削除します。元に戻せません。</div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script type="module">
@@ -186,8 +247,23 @@ const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','broad','block','apt','rec'];
 function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0); }
 let cur='loading';
-let sb, state={user:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null};
+let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null};
 let broadMap, detailMap, userMarker;
+const ROLE_DEFS = [
+  ['admin','管理者'],
+  ['moderator','司会者'],
+  ['member','利用者'],
+  ['viewer','閲覧者'],
+];
+const ROLE_LABEL = Object.fromEntries(ROLE_DEFS);
+const ROLE_ALIAS = {'管理者':'admin','司会者':'moderator','利用者':'member','閲覧者':'viewer','admin':'admin','moderator':'moderator','member':'member','viewer':'viewer'};
+function normalizeRole(v){ return ROLE_ALIAS[String(v||'').trim().toLowerCase()] || ROLE_ALIAS[String(v||'').trim()] || 'member'; }
+function isRoleToken(v){ return !!ROLE_ALIAS[String(v||'').trim().toLowerCase()] || !!ROLE_ALIAS[String(v||'').trim()]; }
+function canRecord(){ return ['admin','moderator','member'].includes(state.role); }
+function fillRoleSelect(sel, value='member'){
+  sel.innerHTML = ROLE_DEFS.map(([v,l])=>`<option value="${v}"${v===value?' selected':''}>${l}</option>`).join('');
+}
+fillRoleSelect($('#adminRole'), 'member');
 
 // 設定済み判定（プレースホルダ置換に影響されない方式）
 const configured = /^https:\/\/[a-z0-9]+\.supabase\.co/i.test(SUPABASE_URL) && SUPABASE_ANON_KEY.startsWith('eyJ');
@@ -227,6 +303,42 @@ $('#googleBtn').addEventListener('click', async ()=>{
   if(error){ console.error('google signIn error', error); $('#loginErr').textContent = '失敗: '+errText(error); }
 });
 $('#signoutBtn').addEventListener('click', ()=> sb.auth.signOut());
+$('#adminBtn').addEventListener('click', ()=>{ $('#adminModal').classList.remove('hidden'); loadAdminUsers(); });
+$('#adminModalClose').addEventListener('click', ()=> $('#adminModal').classList.add('hidden'));
+$('#adminModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.add('hidden'); });
+$('#reloadUsersBtn').addEventListener('click', loadAdminUsers);
+$('#addUserBtn').addEventListener('click', addAdminUser);
+$('#bulkAddUsersBtn').addEventListener('click', bulkAddUsers);
+$('#clearBulkUsersBtn').addEventListener('click', ()=>{ $('#bulkUsersText').value=''; $('#bulkUsersFile').value=''; });
+$('#bulkUsersFile').addEventListener('change', async e=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  $('#bulkUsersText').value = await file.text();
+});
+$('#resetVisitsBtn').addEventListener('click', async ()=>{
+  if(state.role !== 'admin'){
+    toast('管理者のみ実行できます');
+    return;
+  }
+  if(!confirm('全訪問記録を削除します。\nこの操作は元に戻せません。本当に実行しますか？')) return;
+  if(!confirm('最終確認: visits テーブルの全行を削除します。よろしいですか？')) return;
+  $('#resetVisitsBtn').disabled = true;
+  $('#resetVisitsBtn').textContent = '削除中…';
+  try {
+    const { error } = await sb.from('visits').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if(error){
+      toast('削除失敗: '+(error.message||'通信エラー'));
+    } else {
+      toast('全訪問記録を削除しました');
+      $('#adminModal').classList.add('hidden');
+      await loadAll();
+      renderBroad();
+    }
+  } finally {
+    $('#resetVisitsBtn').disabled = false;
+    $('#resetVisitsBtn').textContent = '🗑 全訪問記録を削除';
+  }
+});
 
 async function onLogin(user){
   state.user = user;
@@ -241,9 +353,23 @@ async function onLogin(user){
       go('login'); return;
     }
   } catch(e){ console.warn('allowlist check skipped', e); }
-  // 自分のmembers行を用意（auth側トリガーに依存しない）
-  try { await sb.from('members').upsert({ id:user.id, name:user.email||'member' }, { onConflict:'id', ignoreDuplicates:true }); }
-  catch(e){ console.warn('member upsert skipped', e); }
+  // 許可リストの権限を members に同期。SQL未適用の環境では従来方式へフォールバック。
+  try {
+    const { data: synced, error:se } = await sb.rpc('sync_member_from_allowlist');
+    if(se) throw se;
+    state.role = normalizeRole(synced?.[0]?.role);
+  } catch(e){
+    console.warn('role sync skipped', e);
+    try { await sb.from('members').upsert({ id:user.id, name:user.email||'member', email:user.email||null }, { onConflict:'id', ignoreDuplicates:true }); }
+    catch(up){ console.warn('member upsert skipped', up); }
+    try {
+      const { data:m, error:re } = await sb.from('members').select('role').eq('id', user.id).single();
+      if(re) console.warn('role fetch error', re);
+      state.role = normalizeRole(m?.role);
+    } catch(fe){ console.warn('role fetch exception', fe); state.role = 'member'; }
+  }
+  console.log('user role:', state.role);
+  $('#adminBtn').style.display = state.role === 'admin' ? '' : 'none';
   await loadAll();
   go('broad'); initBroad(); subscribeRealtime();
 }
@@ -456,6 +582,10 @@ function openApt(id){
 
 /* ---------- 画面3: 記録入力 ---------- */
 async function openRecord(id, from){
+  if(!canRecord()){
+    toast('閲覧者は記録できません');
+    return;
+  }
   state.curPlace=id; state.recFrom=from; state.sel=null;
   const r=state.byId[id];
   $('#recName').textContent = r.kind==='号室' ? ((r.label||'')+'号室') : (r.display_name||r.label||'');
@@ -480,6 +610,7 @@ document.querySelectorAll('.obtn').forEach(btn=> btn.addEventListener('click', (
 }));
 $('#saveBtn').addEventListener('click', async ()=>{
   if(!state.sel) return;
+  if(!canRecord()){ toast('閲覧者は記録できません'); return; }
   if(!navigator.onLine){ toast('オフラインのため記録できません。オンラインに戻ってからお試しください'); return; }
   $('#saveBtn').disabled=true;
   const { error } = await sb.from('visits').insert({ place_id:state.curPlace, outcome:state.sel, member_id:state.user.id, note:$('#recNote').value.trim()||null });
@@ -495,10 +626,141 @@ async function refreshNow(){
   if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); }
 }
 
+/* ---------- 管理: ユーザー ---------- */
+function validEmail(email){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
+async function loadAdminUsers(){
+  if(state.role !== 'admin') return;
+  const list = $('#adminUserList');
+  list.innerHTML = '<div class="hint" style="padding:0">読み込み中…</div>';
+  const [{ data: allowed, error }, { data: members }] = await Promise.all([
+    sb.from('allowed_emails').select('email,display_name,role,note,created_at').order('email'),
+    sb.from('members').select('email,name,role')
+  ]);
+  if(error){ list.innerHTML = '<div class="hint" style="padding:0">読み込み失敗: '+esc(errText(error))+'</div>'; return; }
+  const memberByEmail = Object.fromEntries((members||[]).filter(m=>m.email).map(m=>[String(m.email).toLowerCase(), m]));
+  const rows = (allowed||[]).map(row=>{
+    const member = memberByEmail[String(row.email||'').toLowerCase()];
+    return {...row, resolved_name: row.display_name || member?.name || ''};
+  });
+  renderAdminUsers(rows);
+}
+function renderAdminUsers(rows){
+  const list = $('#adminUserList');
+  if(!rows.length){ list.innerHTML = '<div class="hint" style="padding:0">登録ユーザーなし</div>'; return; }
+  list.innerHTML = '';
+  rows.forEach(row=>{
+    const div = document.createElement('div');
+    div.className = 'userrow';
+    div.dataset.email = row.email;
+    div.innerHTML = `<div><div class="name">${esc(row.resolved_name||'名前未設定')}</div><div class="email">${esc(row.email)}</div></div>
+      <select class="rowrole"></select>
+      <input class="admin-note rowname" type="text" value="${esc(row.display_name||row.resolved_name||'')}" placeholder="ユーザー名">
+      <input class="admin-note rownote" type="text" value="${esc(row.note||'')}" placeholder="メモ">
+      <div class="rowactions"><button class="saveuser">更新</button><button class="del deluser">削除</button></div>`;
+    fillRoleSelect(div.querySelector('.rowrole'), normalizeRole(row.role));
+    div.querySelector('.saveuser').addEventListener('click', ()=>saveAdminUser(div));
+    div.querySelector('.deluser').addEventListener('click', ()=>deleteAdminUser(div.dataset.email));
+    list.appendChild(div);
+  });
+}
+async function upsertAllowedUser(email, name, role, note){
+  email = String(email||'').trim().toLowerCase();
+  name = String(name||'').trim() || null;
+  role = normalizeRole(role);
+  note = String(note||'').trim() || null;
+  if(!validEmail(email)) throw new Error('メール形式が不正です: '+email);
+  const { error } = await sb.from('allowed_emails').upsert({ email, display_name:name, role, note }, { onConflict:'email' });
+  if(error) throw error;
+  const memberUpdate = name ? { role, email, name } : { role, email };
+  await sb.from('members').update(memberUpdate).eq('email', email);
+}
+async function addAdminUser(){
+  if(state.role !== 'admin') return toast('管理者のみ実行できます');
+  const name = $('#adminName').value;
+  const email = $('#adminEmail').value;
+  const role = $('#adminRole').value;
+  const note = $('#adminNote').value;
+  try{
+    await upsertAllowedUser(email, name, role, note);
+    $('#adminName').value=''; $('#adminEmail').value=''; $('#adminNote').value=''; fillRoleSelect($('#adminRole'), 'member');
+    toast('ユーザーを追加しました');
+    await loadAdminUsers();
+  }catch(e){ toast('追加失敗: '+errText(e)); }
+}
+async function saveAdminUser(row){
+  if(state.role !== 'admin') return toast('管理者のみ実行できます');
+  try{
+    await upsertAllowedUser(row.dataset.email, row.querySelector('.rowname').value, row.querySelector('.rowrole').value, row.querySelector('.rownote').value);
+    toast('ユーザーを更新しました');
+    await loadAdminUsers();
+  }catch(e){ toast('更新失敗: '+errText(e)); }
+}
+async function deleteAdminUser(email){
+  email = String(email||'').trim().toLowerCase();
+  if(email === String(state.user?.email||'').trim().toLowerCase()) return toast('自分自身は削除できません');
+  if(!confirm(email+' を許可リストから削除しますか？')) return;
+  const { error } = await sb.from('allowed_emails').delete().eq('email', email);
+  if(error){ toast('削除失敗: '+errText(error)); return; }
+  toast('ユーザーを削除しました');
+  await loadAdminUsers();
+}
+function parseDelimitedLine(line, delimiter){
+  const out=[]; let cur='', quote=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(quote && line[i+1]==='"'){ cur+='"'; i++; }
+      else quote=!quote;
+    } else if(ch===delimiter && !quote){ out.push(cur.trim()); cur=''; }
+    else cur+=ch;
+  }
+  out.push(cur.trim());
+  return out;
+}
+function parseUserRows(text){
+  const lines = String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const rows=[];
+  let headers = null;
+  lines.forEach((line, idx)=>{
+    const delimiter = line.includes('\t') ? '\t' : ',';
+    const cells = parseDelimitedLine(line, delimiter);
+    if(idx===0 && cells.some(c=>['email','mail','メール','name','名前','role','権限'].includes(String(c).trim().toLowerCase()))){
+      headers = cells.map(c=>String(c).trim().toLowerCase());
+      return;
+    }
+    let email='', name='', role='member', note='';
+    if(headers){
+      cells.forEach((cell, i)=>{
+        const h = headers[i];
+        if(['email','mail','メール','メールアドレス'].includes(h)) email = cell;
+        else if(['name','名前','ユーザー名','display_name'].includes(h)) name = cell;
+        else if(['role','権限'].includes(h)) role = cell;
+        else if(['note','メモ','備考'].includes(h)) note = cell;
+      });
+    } else if(isRoleToken(cells[1])){
+      [email, role='member', note=''] = cells;
+    } else {
+      [email, name='', role='member', note=''] = cells;
+    }
+    if(email) rows.push({email, name, role:normalizeRole(role), note});
+  });
+  return rows;
+}
+async function bulkAddUsers(){
+  if(state.role !== 'admin') return toast('管理者のみ実行できます');
+  const rows = parseUserRows($('#bulkUsersText').value);
+  if(!rows.length) return toast('一括追加する行がありません');
+  try{
+    for(const row of rows) await upsertAllowedUser(row.email, row.name, row.role, row.note);
+    toast(rows.length+'件を追加/更新しました');
+    await loadAdminUsers();
+  }catch(e){ toast('一括追加失敗: '+errText(e)); }
+}
+
 /* ---------- リアルタイム同期 ---------- */
 function subscribeRealtime(){
   sb.channel('rt-visits')
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'visits' }, ()=>{ refreshStats(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'visits' }, ()=>{ refreshStats(); })
     .subscribe(status=>{ $('#rtState').textContent = status==='SUBSCRIBED' ? '●同期中' : '●'+status; });
 }
 function rerender(){
@@ -510,6 +772,32 @@ function rerender(){
 /* ---------- 共通 ---------- */
 document.querySelectorAll('[data-go]').forEach(b=> b.addEventListener('click', ()=>go(b.dataset.go)));
 $('#editPinBtn').addEventListener('click', toggleEdit);
+document.querySelectorAll('[data-map-full]').forEach(b=> b.addEventListener('click', ()=>enterMapFullscreen(b.dataset.mapFull)));
+$('#exitMapFullBtn').addEventListener('click', exitMapFullscreen);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') exitMapFullscreen(); });
+function mapById(id){ return id==='broadMap' ? broadMap : id==='detailMap' ? detailMap : null; }
+function resizeMap(id){
+  const map = mapById(id);
+  if(map) setTimeout(()=>map.invalidateSize(), 80);
+}
+function enterMapFullscreen(id){
+  const el = $('#'+id);
+  if(!el) return;
+  if(state.fullMap && state.fullMap !== id) exitMapFullscreen();
+  state.fullMap = id;
+  document.body.classList.add('map-is-fullscreen');
+  el.classList.add('fullscreen-map');
+  resizeMap(id);
+}
+function exitMapFullscreen(){
+  if(!state.fullMap) return;
+  const id = state.fullMap;
+  const el = $('#'+id);
+  if(el) el.classList.remove('fullscreen-map');
+  document.body.classList.remove('map-is-fullscreen');
+  state.fullMap = null;
+  resizeMap(id);
+}
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 let toastT; function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1900); }
 
