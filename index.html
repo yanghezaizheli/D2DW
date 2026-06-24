@@ -714,8 +714,11 @@ function renderPlaceList(id){
 function placeTitle(r){ const nm=esc(r.display_name||''), ban=esc(r.label||''); return (nm+(ban?`[${ban}]`:''))||'—'; }
 function cardInner(r){
   const si=statusInfo(r);
-  return `<div class="main"><div class="name">${placeTitle(r)} <span class="badge ${si.cls}">${si.label}</span></div>
-    <div class="meta">前回訪問 <b>${fmtDate(r.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(r.last_met_at)}</b><br>累計不在 <b>${r.absent_count||0}回</b>${si.sub?' ・ '+si.sub:''}</div></div><div class="chev">›</div>`;
+  const nm=esc(r.display_name||''), addr=esc(r.label||'');
+  const nameText=nm||addr||'—';
+  const addrLine=(nm&&addr)?`${addr}<br>`:'';   // 名前があるときだけ住所を名前のすぐ下に
+  return `<div class="main"><div class="name">${nameText} <span class="badge ${si.cls}">${si.label}</span></div>`+
+    `<div class="meta">${addrLine}前回訪問 <b>${fmtDate(r.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(r.last_met_at)}</b><br>累計不在 <b>${r.absent_count||0}回</b>${si.sub?' ・ '+si.sub:''}</div></div><div class="chev">›</div>`;
 }
 function initDetailMap(id){
   if(detailMap){ detailMap.remove(); detailMap=null; }
