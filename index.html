@@ -794,23 +794,25 @@ function toggleBlockManage(){
     setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },140);   // レイアウト変化に追従
   }
 }
-const PLACE_FORM_TYPES=[['戸建て','戸建て'],['ST-M','集合住宅・階段'],['EV-M','集合住宅・エレベーター'],['AL-M','集合住宅・オートロック'],['MANSION','集合住宅・種別未設定']];
+const PLACE_FORM_TYPES=[['戸建て','戸建て'],['店・会社','店・会社'],['AL-M','オートロックマンション'],['EV-M','エレベーターマンション'],['ST-M','階段マンション'],['タウンハウス','タウンハウス']];
 const PLACE_STATUSES=['訪問可能','訪問拒否','他言語','JW','転居・空家'];
 function placeFormTypeValue(p){
-  if(!p || p.kind==='戸建て') return '戸建て';
-  return ['ST-M','EV-M','AL-M'].includes(p.type) ? p.type : 'MANSION';
+  if(!p) return '戸建て';
+  if(['AL-M','EV-M','ST-M'].includes(p.type)) return p.type;       // マンション3種
+  if(p.type==='店・会社' || p.type==='タウンハウス') return p.type;   // 戸建て系の細分類
+  return p.kind==='集合住宅' ? 'EV-M' : '戸建て';                    // 旧データの既定
 }
 function placeFormKindType(v){
+  if(v==='AL-M' || v==='EV-M' || v==='ST-M') return {kind:'集合住宅', type:v};  // マンション=号室を持つ
   if(v==='戸建て') return {kind:'戸建て', type:null};
-  if(v==='MANSION') return {kind:'集合住宅', type:null};
-  return {kind:'集合住宅', type:v};
+  return {kind:'戸建て', type:v};  // 店・会社 / タウンハウス → 戸建て扱い（直接記録）、種別は type に保存
 }
 function renderBlockManagePanel(id){
   const b=state.blocks.find(x=>x.id===id);
   const places=blockTopPlaces(id);
   const ed=state.editingPlace, editing=!!state.editingPlaceId;
   const fName=ed?esc(ed.display_name||''):'', fBan=ed?esc(ed.label||''):'', fNote=ed?esc(ed.note||''):'';
-  const fType=placeFormTypeValue(ed), fStatus=(ed&&ed.status)||'訪問可能';
+  const fType=placeFormTypeValue(ed), fStatus=(ed&&ed.status)||'訪問可能', fHasMgr=!!(ed&&ed.has_manager);
   const typeOpts=PLACE_FORM_TYPES.map(([v,l])=>`<option value="${v}"${v===fType?' selected':''}>${l}</option>`).join('');
   const statusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===fStatus?' selected':''}>${s}</option>`).join('');
   const rows=places.map((r,i)=>{
@@ -831,6 +833,7 @@ function renderBlockManagePanel(id){
       `<input id="pmBan" type="text" placeholder="番地" value="${fBan}">`+
       `<select id="pmType">${typeOpts}</select>`+
       `<select class="wide" id="pmStatus">${statusOpts}</select>`+
+      `<label class="wide" style="font-size:13px;display:flex;align-items:center;gap:8px"><input type="checkbox" id="pmHasMgr" style="width:auto"${fHasMgr?' checked':''}> 管理人あり（マンション）</label>`+
       `<input class="wide" id="pmNote" type="text" placeholder="メモ（任意）" value="${fNote}">`+
     `</div>`+
     `<div class="blockmgr-actions"><button id="pmSaveBtn" class="primarybtn${editing?'':' wide'}">${editing?'更新':'追加'}</button>`+
@@ -881,7 +884,7 @@ async function moveCard(placeId, dir){
 }
 async function startEditPlace(placeId){
   if(state.role!=='admin') return toast('管理者のみ実行できます');
-  const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind').eq('id',placeId).single();
+  const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind,has_manager').eq('id',placeId).single();
   if(error){ toast('取得失敗: '+errText(error)); return; }
   state.editingPlaceId=placeId; state.editingPlace=data;
   renderBlockManagePanel(state.curBlock);
@@ -895,9 +898,9 @@ async function savePlaceCard(){
   if(state.role!=='admin') return toast('管理者のみ実行できます');
   if(!state.curBlock) return;
   const name=$('#pmName').value.trim(), ban=$('#pmBan').value.trim(), note=$('#pmNote').value.trim();
-  const status=$('#pmStatus').value, kt=placeFormKindType($('#pmType').value);
+  const status=$('#pmStatus').value, kt=placeFormKindType($('#pmType').value), hasMgr=$('#pmHasMgr').checked;
   if(!name && !ban) return toast('名前か番地を入力してください');
-  const patch={ display_name:name||null, label:ban||null, note:note||null, status:status||'訪問可能', kind:kt.kind, type:kt.type };
+  const patch={ display_name:name||null, label:ban||null, note:note||null, status:status||'訪問可能', kind:kt.kind, type:kt.type, has_manager:hasMgr };
   const btn=$('#pmSaveBtn'); btn.disabled=true;
   let error;
   if(state.editingPlaceId){
