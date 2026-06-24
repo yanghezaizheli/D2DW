@@ -805,27 +805,29 @@ function toggleBlockManage(){
     setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },140);   // レイアウト変化に追従
   }
 }
-const PLACE_FORM_TYPES=[['戸建て','戸建て'],['店・会社','店・会社'],['AL-M','オートロックマンション'],['EV-M','エレベーターマンション'],['ST-M','階段マンション'],['メゾネット','メゾネット'],['タウンハウス','タウンハウス']];
 const PLACE_STATUSES=['訪問可能','訪問拒否','他言語','JW','転居・空家'];
-function placeFormTypeValue(p){
-  if(!p) return '戸建て';
-  if(['AL-M','EV-M','ST-M'].includes(p.type)) return p.type;                 // マンション3種
-  if(p.type==='メゾネット' || p.type==='店・会社' || p.type==='タウンハウス') return p.type; // 細分類
-  return p.kind==='集合住宅' ? 'EV-M' : '戸建て';                            // 旧データの既定
+const APT_TYPES=[['AL-M','オートロック'],['EV-M','エレベーター'],['ST-M','階段'],['メゾネット','メゾネット']];
+function editAptType(p){
+  return (p && ['AL-M','EV-M','ST-M','メゾネット'].includes(p.type)) ? p.type : 'AL-M';
 }
-function placeFormKindType(v){
-  if(v==='AL-M' || v==='EV-M' || v==='ST-M' || v==='メゾネット') return {kind:'集合住宅', type:v};  // 号室を持つ
-  if(v==='戸建て') return {kind:'戸建て', type:null};
-  return {kind:'戸建て', type:v};  // 店・会社 / タウンハウス → 戸建て扱い（直接記録）、種別は type に保存
+// 種別(戸建て/集合住宅)・管理人の有無に応じて入力欄の表示を切り替える
+function applyCardFormMode(){
+  const apt = $('#pmKind') && $('#pmKind').value==='集合住宅';
+  $('#blockManagePanel').querySelectorAll('.pm-house').forEach(el=>el.style.display=apt?'none':'');
+  $('#blockManagePanel').querySelectorAll('.pm-apt').forEach(el=>el.style.display=apt?'':'none');
+  const mgrIn = apt && $('#pmMgr') && $('#pmMgr').value==='いる';
+  if($('#pmMgrHours')) $('#pmMgrHours').style.display = mgrIn?'':'none';
 }
 function renderBlockManagePanel(id){
   const b=state.blocks.find(x=>x.id===id);
   const places=blockTopPlaces(id);
   const ed=state.editingPlace, editing=!!state.editingPlaceId;
-  const fName=ed?esc(ed.display_name||''):'', fBan=ed?esc(ed.label||''):'', fNote=ed?esc(ed.note||''):'';
-  const fType=placeFormTypeValue(ed), fStatus=(ed&&ed.status)||'訪問可能', fHasMgr=!!(ed&&ed.has_manager);
-  const typeOpts=PLACE_FORM_TYPES.map(([v,l])=>`<option value="${v}"${v===fType?' selected':''}>${l}</option>`).join('');
+  const isApt = ed ? ed.kind==='集合住宅' : false;
+  const fName=ed?esc(ed.display_name||''):'', fAddr=ed?esc(ed.label||''):'', fNote=ed?esc(ed.note||''):'';
+  const fStatus=(ed&&ed.status)||'訪問可能', fAptType=editAptType(ed);
+  const fMgr = (ed&&ed.has_manager) ? 'いる' : 'いない', fHours=ed?esc(ed.manager_hours||''):'';
   const statusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===fStatus?' selected':''}>${s}</option>`).join('');
+  const aptTypeOpts=APT_TYPES.map(([v,l])=>`<option value="${v}"${v===fAptType?' selected':''}>${l}</option>`).join('');
   const rows=places.map((r,i)=>{
     const kind=r.kind==='集合住宅' ? `集合住宅（${childrenOf(r.place_id).length}室）` : '戸建て';
     return `<div class="blockmgr-row"><div><b>${placeTitle(r)}</b><div class="kind">${kind}</div></div>`+
@@ -840,12 +842,18 @@ function renderBlockManagePanel(id){
     `<div class="ehint">区域カード「${esc(b?.name||'')}」内のカードを追加・編集・削除できます。</div>`+
     `<div class="ehead2">${editing?'カードを編集':'単体カードを追加'}</div>`+
     `<div class="admin-grid" style="margin-top:6px">`+
-      `<input class="wide" id="pmName" type="text" placeholder="名前" value="${fName}">`+
-      `<input id="pmBan" type="text" placeholder="番地" value="${fBan}">`+
-      `<select id="pmType">${typeOpts}</select>`+
-      `<select class="wide" id="pmStatus">${statusOpts}</select>`+
-      `<label class="wide" style="font-size:13px;display:flex;align-items:center;gap:8px"><input type="checkbox" id="pmHasMgr" style="width:auto"${fHasMgr?' checked':''}> 管理人あり（マンション）</label>`+
-      `<input class="wide" id="pmNote" type="text" placeholder="メモ（任意）" value="${fNote}">`+
+      `<label class="wide" style="font-size:12px;color:var(--sub)">種別`+
+        `<select id="pmKind" style="width:100%;margin-top:4px">`+
+          `<option value="戸建て"${!isApt?' selected':''}>戸建てタイプ（直接記録）</option>`+
+          `<option value="集合住宅"${isApt?' selected':''}>集合住宅（号室あり）</option>`+
+        `</select></label>`+
+      `<input class="wide" id="pmName" type="text" placeholder="名前 / 建物名" value="${fName}">`+
+      `<input class="wide" id="pmAddr" type="text" placeholder="住所" value="${fAddr}">`+
+      `<select class="wide pm-house" id="pmStatus">${statusOpts}</select>`+
+      `<input class="wide pm-house" id="pmNote" type="text" placeholder="メモ（任意）" value="${fNote}">`+
+      `<select class="wide pm-apt" id="pmAptType">${aptTypeOpts}</select>`+
+      `<label class="wide pm-apt" style="font-size:13px;display:flex;align-items:center;gap:8px">管理人 <select id="pmMgr" style="flex:1"><option ${fMgr==='いない'?'selected':''}>いない</option><option ${fMgr==='いる'?'selected':''}>いる</option></select></label>`+
+      `<input class="wide pm-apt" id="pmMgrHours" type="text" placeholder="勤務日時（空欄は『勤務日時不明』）" value="${fHours}">`+
     `</div>`+
     `<div class="blockmgr-actions"><button id="pmSaveBtn" class="primarybtn${editing?'':' wide'}">${editing?'更新':'追加'}</button>`+
       `${editing?'<button id="pmCancelBtn">やめる</button>':''}</div>`+
@@ -858,6 +866,9 @@ function renderBlockManagePanel(id){
     `<div class="filehint">CSVは「名前」「番地」「メモ」「種別」列を読み込みます。種別が AL-M/ST-M/EV-M の行は集合住宅として作成します。</div>`+
     `<div class="ehead2">カード一覧（編集・削除）</div>`+
     (rows || '<div class="filehint">この区域にはカードがありません。上のフォームから追加できます。</div>');
+  $('#pmKind').addEventListener('change', applyCardFormMode);
+  $('#pmMgr').addEventListener('change', applyCardFormMode);
+  applyCardFormMode();
   $('#pmSaveBtn').addEventListener('click', savePlaceCard);
   const cancelBtn=$('#pmCancelBtn'); if(cancelBtn) cancelBtn.addEventListener('click', cancelEditPlace);
   $('#reloadDetailMapBtn').addEventListener('click', ()=>$('#detailMapFile').click());
@@ -895,7 +906,7 @@ async function moveCard(placeId, dir){
 }
 async function startEditPlace(placeId){
   if(state.role!=='admin') return toast('管理者のみ実行できます');
-  const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind,has_manager').eq('id',placeId).single();
+  const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind,has_manager,manager_hours').eq('id',placeId).single();
   if(error){ toast('取得失敗: '+errText(error)); return; }
   state.editingPlaceId=placeId; state.editingPlace=data;
   renderBlockManagePanel(state.curBlock);
@@ -908,10 +919,20 @@ function cancelEditPlace(){
 async function savePlaceCard(){
   if(state.role!=='admin') return toast('管理者のみ実行できます');
   if(!state.curBlock) return;
-  const name=$('#pmName').value.trim(), ban=$('#pmBan').value.trim(), note=$('#pmNote').value.trim();
-  const status=$('#pmStatus').value, kt=placeFormKindType($('#pmType').value), hasMgr=$('#pmHasMgr').checked;
-  if(!name && !ban) return toast('名前か番地を入力してください');
-  const patch={ display_name:name||null, label:ban||null, note:note||null, status:status||'訪問可能', kind:kt.kind, type:kt.type, has_manager:hasMgr };
+  const kind=$('#pmKind').value;
+  const name=$('#pmName').value.trim(), addr=$('#pmAddr').value.trim();
+  if(!name && !addr) return toast('名前か住所を入力してください');
+  let patch;
+  if(kind==='集合住宅'){
+    const mgrIn=$('#pmMgr').value==='いる';
+    patch={ kind:'集合住宅', type:$('#pmAptType').value, display_name:name||null, label:addr||null,
+      status:'訪問可能', note:null, has_manager:mgrIn,
+      manager_hours: mgrIn ? ($('#pmMgrHours').value.trim() || '勤務日時不明') : null };
+  } else {
+    patch={ kind:'戸建て', type:null, display_name:name||null, label:addr||null,
+      status:$('#pmStatus').value||'訪問可能', note:$('#pmNote').value.trim()||null,
+      has_manager:false, manager_hours:null };
+  }
   const btn=$('#pmSaveBtn'); btn.disabled=true;
   let error;
   if(state.editingPlaceId){
