@@ -197,21 +197,28 @@
     body.pin-edit #editPanel .echip{font-size:14px;padding:6px 12px}
     body.pin-edit #editPanel .ehint{font-size:12px}
   }
+  #cardResizer{display:none}
   /* カード管理: PC向け2ペイン（地図=左 / カード管理=右）。スマホは従来のアコーディオン */
   @media (min-width:760px){
     body.card-manage #app{max-width:none;padding-bottom:0}
     body.card-manage #s-block{
       display:grid;height:100dvh;
-      grid-template-columns:1fr 440px;
+      grid-template-columns:1fr 7px var(--cardpanel-w, 440px);
       grid-template-rows:auto 1fr;
-      grid-template-areas:"bar bar" "map panel";
+      grid-template-areas:"bar bar bar" "map resizer panel";
     }
     body.card-manage #s-block .bar{grid-area:bar}
     body.card-manage #s-block .mapwrap{grid-area:map;min-width:0;min-height:0;height:100%}
     body.card-manage #s-block .map{height:100%!important;width:100%!important}
+    body.card-manage #s-block #cardResizer{
+      display:block;grid-area:resizer;cursor:col-resize;background:var(--line);
+      touch-action:none;position:relative;z-index:600;
+    }
+    body.card-manage #s-block #cardResizer::before{content:"";position:absolute;inset:0 -4px}  /* 当たり判定を広げる */
+    body.card-manage #s-block #cardResizer:hover{background:var(--brand)}
     body.card-manage #s-block #blockManagePanel{
       grid-area:panel;margin:0;overflow-y:auto;display:block!important;
-      border-left:1px solid var(--line);border-top:none;border-bottom:none;
+      border-top:none;border-bottom:none;
     }
     body.card-manage #s-block .hint,
     body.card-manage #s-block #editPanel,
@@ -264,6 +271,7 @@
     <div class="bar"><button class="back" data-go="broad">← 区域</button><h1 id="blockTitle"></h1><button class="mini" id="blockManageBtn" style="display:none">⚙ カード</button><button class="mini" id="editPinBtn">📍 ピン編集</button></div>
     <div class="mapwrap"><div id="detailMap" class="map"></div><button class="mapfull" data-map-full="detailMap" aria-label="地図を全画面表示">⛶</button></div>
     <div class="hint">地図ピン or 下のカードから記録できます。</div>
+    <div id="cardResizer" title="ドラッグで幅を変更"></div>
     <div id="blockManagePanel" class="editpanel" style="display:none"></div>
     <div id="editPanel" class="editpanel" style="display:none"></div>
     <div class="sectiontitle" id="blockProgress"></div>
@@ -1483,6 +1491,32 @@ function rerender(){
 document.querySelectorAll('[data-go]').forEach(b=> b.addEventListener('click', ()=>go(b.dataset.go)));
 $('#blockManageBtn').addEventListener('click', toggleBlockManage);
 $('#editPinBtn').addEventListener('click', toggleEdit);
+/* カード管理パネルの横幅をドラッグで変更（PC2ペイン時） */
+(function initCardResizer(){
+  const rz=$('#cardResizer'); if(!rz) return;
+  const saved=localStorage.getItem('d2dw_cardpanel_w');
+  if(saved) document.documentElement.style.setProperty('--cardpanel-w', saved);
+  const onMove=e=>{
+    const w=window.innerWidth - e.clientX;                       // パネルは右端基準
+    const clamped=Math.max(300, Math.min(window.innerWidth-380, w));
+    document.documentElement.style.setProperty('--cardpanel-w', clamped+'px');
+  };
+  const onUp=e=>{
+    try{ rz.releasePointerCapture(e.pointerId); }catch(_){}
+    rz.removeEventListener('pointermove', onMove);
+    rz.removeEventListener('pointerup', onUp);
+    const cur=document.documentElement.style.getPropertyValue('--cardpanel-w');
+    if(cur) localStorage.setItem('d2dw_cardpanel_w', cur.trim());
+    if(detailMap) setTimeout(()=>detailMap.invalidateSize(),60);
+  };
+  rz.addEventListener('pointerdown', e=>{
+    e.preventDefault();
+    try{ rz.setPointerCapture(e.pointerId); }catch(_){}
+    rz.addEventListener('pointermove', onMove);
+    rz.addEventListener('pointerup', onUp);
+    rz.addEventListener('pointercancel', onUp);
+  });
+})();
 document.querySelectorAll('[data-map-full]').forEach(b=> b.addEventListener('click', ()=>enterMapFullscreen(b.dataset.mapFull)));
 $('#exitMapFullBtn').addEventListener('click', exitMapFullscreen);
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') exitMapFullscreen(); });
