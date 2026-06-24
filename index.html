@@ -541,11 +541,11 @@ function renderPlaceList(id){
     el.appendChild(div);
   });
 }
+// 「名前[番地]」表示（カード／ピン編集チップ共通）
+function placeTitle(r){ const nm=esc(r.display_name||''), ban=esc(r.label||''); return (nm+(ban?`[${ban}]`:''))||'—'; }
 function cardInner(r){
   const si=statusInfo(r);
-  const nm=esc(r.display_name||''), ban=esc(r.label||'');
-  const title=(nm+(ban?`[${ban}]`:''))||'—';   // 名前[番地]
-  return `<div class="main"><div class="name">${title} <span class="badge ${si.cls}">${si.label}</span></div>
+  return `<div class="main"><div class="name">${placeTitle(r)} <span class="badge ${si.cls}">${si.label}</span></div>
     <div class="meta">前回訪問 <b>${fmtDate(r.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(r.last_met_at)}</b><br>累計不在 <b>${r.absent_count||0}回</b>${si.sub?' ・ '+si.sub:''}</div></div><div class="chev">›</div>`;
 }
 function initDetailMap(id){
@@ -581,7 +581,7 @@ function drawPins(id){
     const apt=r.kind==='集合住宅', color=pinColor(r,apt), seld=state.editSel===r.place_id;
     const icon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,22],
       html:`<div class="pin" style="width:22px;height:22px;background:${color};${seld?'outline:3px solid #ffd34d;outline-offset:1px;':''}"><span style="font-size:9px">${apt?'集':''}</span></div>`});
-    const mk=L.marker([r.map_y,r.map_x],{icon, draggable: !!state.editMode}).addTo(detailMap).bindTooltip(esc(r.label||r.display_name||''),{direction:'top'});
+    const mk=L.marker([r.map_y,r.map_x],{icon, draggable: !!state.editMode}).addTo(detailMap).bindTooltip(placeTitle(r),{direction:'top'});
     if(state.editMode){
       mk.on('dragend', ev=>{ const ll=ev.target.getLatLng(); saveCoords(r.place_id, Math.round(ll.lng), Math.round(ll.lat)); });
       mk.on('click', ()=>{ state.editSel=r.place_id; renderEditPanel(id); drawPins(id); });
@@ -609,7 +609,7 @@ function toggleEdit(){
 function renderEditPanel(id){
   const places=state.stats.filter(r=>r.block_id===id && (r.kind==='戸建て'||r.kind==='集合住宅'));
   const unplaced=places.filter(r=>r.map_x==null), placed=places.filter(r=>r.map_x!=null);
-  const chip=r=>`<span class="echip${state.editSel===r.place_id?' sel':''}" data-pid="${r.place_id}">${esc(r.label||r.display_name||'')}</span>`;
+  const chip=r=>`<span class="echip${state.editSel===r.place_id?' sel':''}" data-pid="${r.place_id}">${placeTitle(r)}</span>`;
   $('#editPanel').innerHTML=
     `<div class="ehead">未配置 ${unplaced.length}／配置済 ${placed.length}</div>`+
     `<div class="ehint">①下の戸を選ぶ → ②地図をタップで設置。設置済みピンはドラッグで微調整できます。</div>`+
