@@ -107,6 +107,19 @@
   .modal{background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:480px;max-height:88dvh;overflow:auto;padding:20px 16px 32px;display:flex;flex-direction:column;gap:12px}
   .modal h3{margin:0;font-size:15px;font-weight:700}
   .modal h4{margin:8px 0 0;font-size:13px;color:var(--brand)}
+  /* アコーディオン */
+  .acc{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .acc-head{width:100%;background:#f7f8f7;border:none;text-align:left;padding:13px 14px;font-size:14px;
+    font-weight:700;color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .acc-head:active{background:#eef2ef}
+  .acc-ar{color:var(--sub);transition:transform .15s}
+  .acc.open .acc-ar{transform:rotate(90deg)}
+  .acc-body{display:none;padding:12px 14px;border-top:1px solid var(--line);flex-direction:column;gap:10px}
+  .acc.open .acc-body{display:flex}
+  .filestat{font-size:12px;color:var(--sub)}
+  .nb-pchint{font-size:12px;color:var(--amber);font-weight:600}
+  .nb-house-head{margin-bottom:2px;font-size:11px;color:var(--sub);font-weight:700}
+  .nb-house-head span{padding:0 2px}
   .modal-close{align-self:flex-end;background:none;border:none;font-size:20px;cursor:pointer;color:var(--sub);line-height:1;padding:0}
   .danger{background:#c0473b;color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;width:100%}
   .danger:active{opacity:.8}
@@ -132,6 +145,15 @@
   .nb-house{display:grid;grid-template-columns:1fr 84px 1fr 34px;gap:6px;margin-bottom:6px}
   .nb-house input{border:1px solid var(--line);border-radius:9px;padding:9px;font-size:14px;font-family:inherit;min-width:0}
   .nb-house .rm{border:1px solid var(--line);background:#fff;border-radius:9px;cursor:pointer;color:var(--red);font-weight:700}
+  /* PC: 管理モーダルを中央・ワイド化（新区域作成を快適に） */
+  @media (min-width:760px){
+    .modal-bg{align-items:center}
+    .modal{max-width:560px;border-radius:16px;max-height:90dvh}
+    .acc.acc-wide.open{position:relative}
+    .acc-wide.open .acc-body{max-width:none}
+    body.nb-open .modal{max-width:860px}
+    body.nb-open .nb-house{grid-template-columns:1fr 120px 1.4fr 40px}
+  }
   /* 号室並び替え */
   .card.sorting{cursor:default}
   .sortctrls{display:flex;gap:6px}
@@ -264,44 +286,70 @@
   <div class="modal">
     <button class="modal-close" id="adminModalClose">✕</button>
     <h3>管理メニュー</h3>
-    <h4>ユーザー追加</h4>
-    <div class="admin-grid">
-      <input class="wide" id="adminName" type="text" placeholder="ユーザー名">
-      <input id="adminEmail" type="email" placeholder="user@example.com">
-      <select id="adminRole"></select>
+
+    <div class="acc">
+      <button class="acc-head" type="button">👤 ユーザーを追加<span class="acc-ar">▸</span></button>
+      <div class="acc-body">
+        <div class="admin-grid">
+          <input class="wide" id="adminName" type="text" placeholder="ユーザー名">
+          <input id="adminEmail" type="email" placeholder="user@example.com">
+          <select id="adminRole"></select>
+        </div>
+        <input class="admin-note" id="adminNote" type="text" placeholder="メモ（任意）">
+        <div class="admin-actions"><button class="primarybtn" id="addUserBtn">ユーザーを追加</button></div>
+      </div>
     </div>
-    <input class="admin-note" id="adminNote" type="text" placeholder="メモ（任意）">
-    <div class="admin-actions"><button class="primarybtn" id="addUserBtn">ユーザーを追加</button><button id="reloadUsersBtn">再読込</button></div>
 
-    <h4>CSV/TSV一括追加</h4>
-    <textarea class="admin-csv" id="bulkUsersText" placeholder="email,name,role,note&#10;user1@example.com,山田太郎,利用者,01区域&#10;user2@example.com	佐藤花子	閲覧者	見学用"></textarea>
-    <input id="bulkUsersFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain">
-    <div class="admin-actions"><button class="primarybtn" id="bulkAddUsersBtn">一括追加</button><button id="clearBulkUsersBtn">クリア</button></div>
-
-    <h4>登録ユーザー一覧（名前・メール・権限）</h4>
-    <div class="userlist" id="adminUserList"><div class="hint" style="padding:0">読み込み中…</div></div>
-
-    <h4>新しい区域を作成</h4>
-    <div class="admin-grid">
-      <input class="wide" id="nbName" type="text" placeholder="区域名（例: 長住2-4）※必須">
-      <input id="nbCode" type="text" placeholder="区域番号（例: 8-B）">
-      <input class="wide" id="nbArea" type="text" placeholder="住所 / エリア（任意）">
+    <div class="acc">
+      <button class="acc-head" type="button">📄 ユーザーをCSVで一括追加<span class="acc-ar">▸</span></button>
+      <div class="acc-body">
+        <div class="hint" style="padding:0 0 6px">列: email, name, role, note（CSV / TSV ファイル）</div>
+        <input id="bulkUsersFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain">
+        <div class="filestat" id="bulkUsersStat"></div>
+        <div class="admin-actions"><button class="primarybtn" id="bulkAddUsersBtn">一括追加</button><button id="clearBulkUsersBtn">クリア</button></div>
+      </div>
     </div>
-    <div class="nb-sub">各戸カード（手動追加）</div>
-    <div id="nbHouseRows"></div>
-    <div class="admin-actions"><button class="plainbtn" id="nbAddRowBtn">＋ 行を追加</button></div>
-    <div class="nb-sub">各戸カード（CSV / TSV 一括）</div>
-    <select id="nbCsvFormat" class="nb-select">
-      <option value="new">新規形式: 名前, 番地, メモ</option>
-      <option value="legacy">既存流用: 番地, 名前, 訪問フラグ, 不在回数, 会えた日付, ステータス, 最終訪問日時</option>
-    </select>
-    <textarea class="admin-csv" id="nbCsvText" placeholder="名前,番地,メモ&#10;山田,123,&#10;佐藤,124,長期不在"></textarea>
-    <div class="admin-actions"><button class="primarybtn" id="nbCreateBtn">区域を作成</button><button id="nbClearBtn">CSVクリア</button></div>
-    <div id="nbResult" style="font-size:12px;color:var(--sub);margin-top:4px"></div>
 
-    <h4>危険な操作</h4>
-    <button class="danger" id="resetVisitsBtn">🗑 全訪問記録を削除</button>
-    <div style="font-size:12px;color:var(--sub)">※ visits テーブルの全行を削除します。元に戻せません。</div>
+    <div class="acc">
+      <button class="acc-head" type="button">📋 登録ユーザー一覧<span class="acc-ar">▸</span></button>
+      <div class="acc-body">
+        <div class="admin-actions" style="margin-bottom:8px"><button id="reloadUsersBtn">再読込</button></div>
+        <div class="userlist" id="adminUserList"><div class="hint" style="padding:0">読み込み中…</div></div>
+      </div>
+    </div>
+
+    <div class="acc acc-wide" id="nbAcc">
+      <button class="acc-head" type="button">🏘 新しい区域を作成<span class="acc-ar">▸</span></button>
+      <div class="acc-body">
+        <div class="nb-pchint">この機能はパソコンでの利用を想定しています。</div>
+        <div class="admin-grid">
+          <input class="wide" id="nbName" type="text" placeholder="区域名（例: 長住2-4）※必須">
+          <input id="nbCode" type="text" placeholder="区域番号（例: 8-B）">
+          <input class="wide" id="nbArea" type="text" placeholder="住所 / エリア（任意）">
+        </div>
+        <div class="nb-sub">各戸カード（手動追加）</div>
+        <div class="nb-house nb-house-head"><span>名前</span><span>番地</span><span>メモ</span><span></span></div>
+        <div id="nbHouseRows"></div>
+        <div class="admin-actions"><button class="plainbtn" id="nbAddRowBtn">＋ 行を追加</button></div>
+        <div class="nb-sub">各戸カード（CSV / TSV ファイル一括）</div>
+        <select id="nbCsvFormat" class="nb-select">
+          <option value="new">新規形式: 名前, 番地, メモ</option>
+          <option value="legacy">既存流用: 番地, 名前, 訪問フラグ, 不在回数, 会えた日付, ステータス, 最終訪問日時</option>
+        </select>
+        <input id="nbCsvFile" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain">
+        <div class="filestat" id="nbCsvStat"></div>
+        <div class="admin-actions"><button class="primarybtn" id="nbCreateBtn">区域を作成</button><button id="nbClearBtn">CSVクリア</button></div>
+        <div id="nbResult" style="font-size:12px;color:var(--sub);margin-top:4px"></div>
+      </div>
+    </div>
+
+    <div class="acc">
+      <button class="acc-head" type="button">⚠ 危険な操作<span class="acc-ar">▸</span></button>
+      <div class="acc-body">
+        <button class="danger" id="resetVisitsBtn">🗑 全訪問記録を削除</button>
+        <div style="font-size:12px;color:var(--sub);margin-top:6px">※ visits テーブルの全行を削除します。元に戻せません。</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -381,25 +429,43 @@ $('#googleBtn').addEventListener('click', async ()=>{
   if(error){ console.error('google signIn error', error); $('#loginErr').textContent = '失敗: '+errText(error); }
 });
 $('#signoutBtn').addEventListener('click', ()=> sb.auth.signOut());
+let bulkUsersContent='', nbCsvContent='';   // CSVはファイル読込で保持
+function closeAdminModal(){ $('#adminModal').classList.add('hidden'); document.body.classList.remove('nb-open'); }
 $('#adminBtn').addEventListener('click', ()=>{ $('#adminModal').classList.remove('hidden'); loadAdminUsers(); if(!$('#nbHouseRows').children.length) nbResetHouseRows(); });
-$('#adminModalClose').addEventListener('click', ()=> $('#adminModal').classList.add('hidden'));
-$('#adminModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) e.currentTarget.classList.add('hidden'); });
+$('#adminModalClose').addEventListener('click', closeAdminModal);
+$('#adminModal').addEventListener('click', e=>{ if(e.target===e.currentTarget) closeAdminModal(); });
+// アコーディオン開閉（各機能はタップで展開）
+document.querySelectorAll('#adminModal .acc-head').forEach(h=> h.addEventListener('click', ()=>{
+  const acc=h.parentElement, willOpen=!acc.classList.contains('open');
+  acc.classList.toggle('open', willOpen);
+  if(acc.id==='nbAcc'){
+    document.body.classList.toggle('nb-open', willOpen);   // PCで新区域を広く表示
+    if(willOpen && !$('#nbHouseRows').children.length) nbResetHouseRows();
+  }
+}));
 $('#reloadUsersBtn').addEventListener('click', loadAdminUsers);
 $('#addUserBtn').addEventListener('click', addAdminUser);
 $('#bulkAddUsersBtn').addEventListener('click', bulkAddUsers);
-$('#clearBulkUsersBtn').addEventListener('click', ()=>{ $('#bulkUsersText').value=''; $('#bulkUsersFile').value=''; });
+$('#clearBulkUsersBtn').addEventListener('click', ()=>{ bulkUsersContent=''; $('#bulkUsersFile').value=''; $('#bulkUsersStat').textContent=''; });
 $('#bulkUsersFile').addEventListener('change', async e=>{
   const file = e.target.files && e.target.files[0];
-  if(!file) return;
-  $('#bulkUsersText').value = await file.text();
+  if(!file){ bulkUsersContent=''; $('#bulkUsersStat').textContent=''; return; }
+  bulkUsersContent = await file.text();
+  const n = parseUserRows(bulkUsersContent).length;
+  $('#bulkUsersStat').textContent = `読み込み: ${file.name}（${n}件）`;
 });
 $('#nbAddRowBtn').addEventListener('click', ()=> nbAddHouseRow());
 $('#nbCreateBtn').addEventListener('click', nbCreateBlock);
-$('#nbClearBtn').addEventListener('click', ()=>{ $('#nbCsvText').value=''; });
+$('#nbClearBtn').addEventListener('click', ()=>{ nbCsvContent=''; $('#nbCsvFile').value=''; $('#nbCsvStat').textContent=''; });
+$('#nbCsvFile').addEventListener('change', async e=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file){ nbCsvContent=''; $('#nbCsvStat').textContent=''; return; }
+  nbCsvContent = await file.text();
+  const n = nbParseCsv(nbCsvContent, $('#nbCsvFormat').value).length;
+  $('#nbCsvStat').textContent = `読み込み: ${file.name}（${n}戸）`;
+});
 $('#nbCsvFormat').addEventListener('change', ()=>{
-  $('#nbCsvText').placeholder = $('#nbCsvFormat').value==='new'
-    ? '名前,番地,メモ\n山田,123,\n佐藤,124,長期不在'
-    : '番地,名前,訪問フラグ,不在回数,会えた日付,ステータス,最終訪問日時\n123,山田,投函,2,26/6/1,訪問可能,26/6/13';
+  if(nbCsvContent){ const n=nbParseCsv(nbCsvContent, $('#nbCsvFormat').value).length; $('#nbCsvStat').textContent=`読み込み済み（${n}戸）`; }
 });
 $('#resetVisitsBtn').addEventListener('click', async ()=>{
   if(state.role !== 'admin'){
@@ -925,8 +991,8 @@ function parseUserRows(text){
 }
 async function bulkAddUsers(){
   if(state.role !== 'admin') return toast('管理者のみ実行できます');
-  const rows = parseUserRows($('#bulkUsersText').value);
-  if(!rows.length) return toast('一括追加する行がありません');
+  const rows = parseUserRows(bulkUsersContent);
+  if(!rows.length) return toast('CSVファイルを読み込んでください（追加する行がありません）');
   try{
     for(const row of rows) await upsertAllowedUser(row.email, row.name, row.role, row.note);
     toast(rows.length+'件を追加/更新しました');
@@ -993,7 +1059,7 @@ async function nbCreateBlock(){
   const name=$('#nbName').value.trim();
   if(!name) return toast('区域名は必須です');
   const code=$('#nbCode').value.trim()||null, area=$('#nbArea').value.trim()||null;
-  const houses=[...nbCollectManual(), ...nbParseCsv($('#nbCsvText').value, $('#nbCsvFormat').value)];
+  const houses=[...nbCollectManual(), ...nbParseCsv(nbCsvContent, $('#nbCsvFormat').value)];
   $('#nbCreateBtn').disabled=true; $('#nbResult').textContent='作成中…';
   try{
     const { data:blk, error:be } = await sb.from('blocks').insert({name, code, area}).select('id').single();
@@ -1013,7 +1079,8 @@ async function nbCreateBlock(){
     await loadAll(); renderBroad();
     $('#nbResult').textContent=`区域「${name}」を作成しました（戸 ${placeCount} / 訪問ログ ${visitCount}）`;
     toast('区域を作成しました');
-    $('#nbName').value=''; $('#nbCode').value=''; $('#nbArea').value=''; $('#nbCsvText').value=''; nbResetHouseRows();
+    $('#nbName').value=''; $('#nbCode').value=''; $('#nbArea').value='';
+    nbCsvContent=''; $('#nbCsvFile').value=''; $('#nbCsvStat').textContent=''; nbResetHouseRows();
   }catch(e){
     $('#nbResult').textContent='';
     toast('作成失敗: '+errText(e));
