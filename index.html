@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#2f6f4f">
 <title>D2DW 戸別訪問記録</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="assets/images/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -139,6 +139,18 @@
   .userrow .rowactions{grid-column:1 / -1;display:flex;gap:8px}
   .userrow .rowactions button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px;font-size:12px;font-weight:700}
   .userrow .rowactions .del{color:var(--red)}
+  .blockmgr-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .blockmgr-actions .wide{grid-column:1 / -1}
+  .blockmgr-actions button,.blockmgr-row button,.filebtn{
+    border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;font-size:13px;font-weight:700;cursor:pointer
+  }
+  .blockmgr-actions .dangerbtn,.blockmgr-row .dangerbtn{border-color:#d9b4ae;color:var(--red)}
+  .blockmgr-actions .primarybtn{background:var(--brand);border-color:var(--brand);color:#fff}
+  .blockmgr-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border-top:1px solid var(--line);padding:9px 0}
+  .blockmgr-row .kind{font-size:11px;color:var(--sub);margin-top:2px}
+  .blockmgr-rowbtns{display:flex;gap:6px}
+  .filebtn{display:block;text-align:center;width:100%;box-sizing:border-box;margin-top:8px}
+  .filehint{font-size:12px;color:var(--sub);line-height:1.5;margin-top:6px}
   /* 新区域作成 */
   .nb-sub{font-size:12px;color:var(--sub);font-weight:700;margin:12px 0 4px}
   .nb-select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px;font-size:13px;font-family:inherit;margin-bottom:6px}
@@ -226,9 +238,10 @@
 
   <!-- 区域詳細 -->
   <section id="s-block" class="screen">
-    <div class="bar"><button class="back" data-go="broad">← 区域</button><h1 id="blockTitle"></h1><button class="mini" id="editPinBtn">📍 ピン編集</button></div>
+    <div class="bar"><button class="back" data-go="broad">← 区域</button><h1 id="blockTitle"></h1><button class="mini" id="blockManageBtn" style="display:none">⚙ カード</button><button class="mini" id="editPinBtn">📍 ピン編集</button></div>
     <div class="mapwrap"><div id="detailMap" class="map"></div><button class="mapfull" data-map-full="detailMap" aria-label="地図を全画面表示">⛶</button></div>
     <div class="hint">地図ピン or 下のカードから記録できます。</div>
+    <div id="blockManagePanel" class="editpanel" style="display:none"></div>
     <div id="editPanel" class="editpanel" style="display:none"></div>
     <div class="sectiontitle" id="blockProgress"></div>
     <div id="placeList" class="list"></div>
@@ -538,15 +551,27 @@ function loadCache(){ try{
   const s=JSON.parse(localStorage.getItem(CK_STATS)||'null');
   if(b&&s){ state.blocks=b; state.stats=s; state.byId=Object.fromEntries(s.map(r=>[r.place_id,r])); return localStorage.getItem(CK_TS); }
 }catch(e){} return null; }
+function applyPlaceSortOrders(stats, places){
+  const orderById=Object.fromEntries((places||[]).map(p=>[p.id, p.sort_order ?? 0]));
+  return (stats||[]).map(r=>({...r, sort_order: orderById[r.place_id] ?? r.sort_order ?? 0}));
+}
+async function fetchStatsWithOrder(){
+  const [s, p] = await Promise.all([
+    sb.from('place_stats').select('*'),
+    sb.from('places').select('id,sort_order')
+  ]);
+  if(s.error || p.error) throw (s.error || p.error);
+  return applyPlaceSortOrders(s.data||[], p.data||[]);
+}
 async function loadAll(){
   try{
     const [b, s] = await Promise.all([
       sb.from('blocks').select('*').order('name'),
-      sb.from('place_stats').select('*'),
+      fetchStatsWithOrder(),
     ]);
-    if(b.error || s.error) throw (b.error||s.error);
+    if(b.error) throw b.error;
     state.blocks = b.data||[];
-    state.stats = s.data||[];
+    state.stats = s||[];
     state.byId = Object.fromEntries(state.stats.map(r=>[r.place_id, r]));
     cacheData();
     renderBroad();
@@ -560,8 +585,10 @@ let refreshTimer;
 async function refreshStats(){
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(async ()=>{
-    const { data } = await sb.from('place_stats').select('*');
-    if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); rerender(); }
+    try{
+      const data = await fetchStatsWithOrder();
+      state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); rerender();
+    }catch(e){ console.warn('refreshStats failed', e); }
   }, 250);
 }
 
@@ -619,6 +646,8 @@ $('#locateBtn').addEventListener('click', ()=>{
 function openBlock(id){
   state.curBlock=id; const b=state.blocks.find(x=>x.id===id);
   state.editMode=false; state.editSel=null; $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
+  $('#blockManagePanel').style.display='none';
+  $('#blockManageBtn').style.display = state.role==='admin' ? '' : 'none';
   document.body.classList.remove('pin-edit');
   $('#blockTitle').innerHTML=`${esc(b.name)} <span class="sub">区域 ${esc(b.code||'')}</span>`;
   const lv=leaves(id), due=lv.filter(r=>r.is_due).length;
@@ -629,7 +658,7 @@ function openBlock(id){
 const BLDG_TYPE_LABEL={'ST-M':'階段','EV-M':'エレベーター','AL-M':'オートロック'};
 function renderPlaceList(id){
   const el=$('#placeList'); el.innerHTML='';
-  state.stats.filter(r=>r.block_id===id && (r.kind==='戸建て'||r.kind==='集合住宅')).forEach(r=>{
+  blockTopPlaces(id).forEach(r=>{
     const div=document.createElement('div'); div.className='card';
     if(r.kind==='集合住宅'){
       const kids=childrenOf(r.place_id), due=kids.filter(k=>k.is_due).length;
@@ -705,6 +734,7 @@ function toggleEdit(){
   state.editMode=!state.editMode; state.editSel=null;
   $('#editPinBtn').textContent = state.editMode ? '完了' : '📍 ピン編集';
   $('#editPanel').style.display = state.editMode ? 'block' : 'none';
+  if(state.editMode) $('#blockManagePanel').style.display='none';
   document.body.classList.toggle('pin-edit', state.editMode);  // PC向け2ペイン全画面レイアウト切替
   if(state.editMode) renderEditPanel(state.curBlock);
   initDetailMap(state.curBlock);
@@ -719,6 +749,292 @@ function renderEditPanel(id){
     `<div class="echips">${unplaced.map(chip).join('')||'<i>すべて配置済みです</i>'}</div>`+
     (placed.length?`<div class="ehead2">配置済み（選ぶと移動）</div><div class="echips">${placed.map(chip).join('')}</div>`:'');
   $('#editPanel').querySelectorAll('.echip').forEach(c=>c.addEventListener('click',()=>{ state.editSel=c.dataset.pid; renderEditPanel(id); drawPins(id); }));
+}
+function blockTopPlaces(id){
+  return state.stats.filter(r=>r.block_id===id && (r.kind==='戸建て'||r.kind==='集合住宅'))
+    .sort((a,b)=>((a.sort_order??9999)-(b.sort_order??9999)) || String(a.display_name||a.label||'').localeCompare(String(b.display_name||b.label||''),'ja'));
+}
+function toggleBlockManage(){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  if(!state.curBlock) return;
+  if(state.editMode) toggleEdit();
+  const panel=$('#blockManagePanel');
+  const show=panel.style.display==='none';
+  panel.style.display=show?'block':'none';
+  if(show){ state.editingPlaceId=null; state.editingPlace=null; renderBlockManagePanel(state.curBlock); }
+}
+const PLACE_FORM_TYPES=[['戸建て','戸建て'],['ST-M','集合住宅・階段'],['EV-M','集合住宅・エレベーター'],['AL-M','集合住宅・オートロック'],['MANSION','集合住宅・種別未設定']];
+const PLACE_STATUSES=['訪問可能','訪問拒否','他言語','JW','転居・空家'];
+function placeFormTypeValue(p){
+  if(!p || p.kind==='戸建て') return '戸建て';
+  return ['ST-M','EV-M','AL-M'].includes(p.type) ? p.type : 'MANSION';
+}
+function placeFormKindType(v){
+  if(v==='戸建て') return {kind:'戸建て', type:null};
+  if(v==='MANSION') return {kind:'集合住宅', type:null};
+  return {kind:'集合住宅', type:v};
+}
+function renderBlockManagePanel(id){
+  const b=state.blocks.find(x=>x.id===id);
+  const places=blockTopPlaces(id);
+  const ed=state.editingPlace, editing=!!state.editingPlaceId;
+  const fName=ed?esc(ed.display_name||''):'', fBan=ed?esc(ed.label||''):'', fNote=ed?esc(ed.note||''):'';
+  const fType=placeFormTypeValue(ed), fStatus=(ed&&ed.status)||'訪問可能';
+  const typeOpts=PLACE_FORM_TYPES.map(([v,l])=>`<option value="${v}"${v===fType?' selected':''}>${l}</option>`).join('');
+  const statusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===fStatus?' selected':''}>${s}</option>`).join('');
+  const rows=places.map(r=>{
+    const kind=r.kind==='集合住宅' ? `集合住宅（${childrenOf(r.place_id).length}室）` : '戸建て';
+    return `<div class="blockmgr-row"><div><b>${placeTitle(r)}</b><div class="kind">${kind}</div></div>`+
+      `<div class="blockmgr-rowbtns"><button class="editbtn" data-edit-place="${r.place_id}">編集</button>`+
+      `<button class="dangerbtn" data-del-place="${r.place_id}" data-label="${esc(r.display_name||r.label||'このカード')}">削除</button></div></div>`;
+  }).join('');
+  $('#blockManagePanel').innerHTML=
+    `<div class="ehead">各戸カードメニュー</div>`+
+    `<div class="ehint">区域カード「${esc(b?.name||'')}」内のカードを追加・編集・削除できます。</div>`+
+    `<div class="ehead2">${editing?'カードを編集':'単体カードを追加'}</div>`+
+    `<div class="admin-grid" style="margin-top:6px">`+
+      `<input class="wide" id="pmName" type="text" placeholder="名前" value="${fName}">`+
+      `<input id="pmBan" type="text" placeholder="番地" value="${fBan}">`+
+      `<select id="pmType">${typeOpts}</select>`+
+      `<select class="wide" id="pmStatus">${statusOpts}</select>`+
+      `<input class="wide" id="pmNote" type="text" placeholder="メモ（任意）" value="${fNote}">`+
+    `</div>`+
+    `<div class="blockmgr-actions"><button id="pmSaveBtn" class="primarybtn${editing?'':' wide'}">${editing?'更新':'追加'}</button>`+
+      `${editing?'<button id="pmCancelBtn">やめる</button>':''}</div>`+
+    `<div class="ehead2">一括・地図</div>`+
+    `<div class="blockmgr-actions"><button id="reloadDetailMapBtn" class="filebtn">詳細地図PNGを読込</button>`+
+    `<button id="autoCreateFromCsvBtn" class="filebtn">CSVからカード自動作成</button>`+
+    `<button id="deleteAllPlacesBtn" class="dangerbtn wide">全カード削除</button></div>`+
+    `<input id="detailMapFile" type="file" accept="image/png" style="display:none">`+
+    `<input id="autoCsvFile" type="file" accept=".csv,text/csv" style="display:none">`+
+    `<div class="filehint">CSVは「名前」「番地」「メモ」「種別」列を読み込みます。種別が AL-M/ST-M/EV-M の行は集合住宅として作成します。</div>`+
+    `<div class="ehead2">カード一覧（編集・削除）</div>`+
+    (rows || '<div class="filehint">この区域にはカードがありません。上のフォームから追加できます。</div>');
+  $('#pmSaveBtn').addEventListener('click', savePlaceCard);
+  const cancelBtn=$('#pmCancelBtn'); if(cancelBtn) cancelBtn.addEventListener('click', cancelEditPlace);
+  $('#reloadDetailMapBtn').addEventListener('click', ()=>$('#detailMapFile').click());
+  $('#autoCreateFromCsvBtn').addEventListener('click', ()=>$('#autoCsvFile').click());
+  $('#detailMapFile').addEventListener('change', handleDetailMapFile);
+  $('#autoCsvFile').addEventListener('change', handleAutoCsvFile);
+  $('#deleteAllPlacesBtn').addEventListener('click', deleteAllBlockPlaces);
+  $('#blockManagePanel').querySelectorAll('[data-edit-place]').forEach(btn=>{
+    btn.addEventListener('click', ()=>startEditPlace(btn.dataset.editPlace));
+  });
+  $('#blockManagePanel').querySelectorAll('[data-del-place]').forEach(btn=>{
+    btn.addEventListener('click', ()=>deletePlaceCard(btn.dataset.delPlace, btn.dataset.label));
+  });
+}
+async function startEditPlace(placeId){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind').eq('id',placeId).single();
+  if(error){ toast('取得失敗: '+errText(error)); return; }
+  state.editingPlaceId=placeId; state.editingPlace=data;
+  renderBlockManagePanel(state.curBlock);
+  $('#blockManagePanel').scrollIntoView({block:'nearest'});
+}
+function cancelEditPlace(){
+  state.editingPlaceId=null; state.editingPlace=null;
+  renderBlockManagePanel(state.curBlock);
+}
+async function savePlaceCard(){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  if(!state.curBlock) return;
+  const name=$('#pmName').value.trim(), ban=$('#pmBan').value.trim(), note=$('#pmNote').value.trim();
+  const status=$('#pmStatus').value, kt=placeFormKindType($('#pmType').value);
+  if(!name && !ban) return toast('名前か番地を入力してください');
+  const patch={ display_name:name||null, label:ban||null, note:note||null, status:status||'訪問可能', kind:kt.kind, type:kt.type };
+  const btn=$('#pmSaveBtn'); btn.disabled=true;
+  let error;
+  if(state.editingPlaceId){
+    ({ error } = await sb.from('places').update(patch).eq('id', state.editingPlaceId));
+  } else {
+    patch.block_id=state.curBlock; patch.sort_order=blockTopPlaces(state.curBlock).length;
+    ({ error } = await sb.from('places').insert(patch));
+  }
+  btn.disabled=false;
+  if(error){ toast('保存失敗（管理者権限が必要）: '+errText(error)); return; }
+  toast(state.editingPlaceId?'カードを更新しました':'カードを追加しました');
+  state.editingPlaceId=null; state.editingPlace=null;
+  await refreshNow();
+  renderPlaceList(state.curBlock); renderBlockManagePanel(state.curBlock); initDetailMap(state.curBlock); renderBroad();
+}
+async function handleDetailMapFile(e){
+  const file=e.target.files && e.target.files[0];
+  e.target.value='';
+  if(!file) return;
+  const dataUrl=await readPngDataUrl(file);
+  if(!dataUrl || !state.curBlock) return;
+  const ok=await saveDetailMapDataUrl(dataUrl);
+  if(ok){ toast('詳細地図を更新しました'); initDetailMap(state.curBlock); }
+}
+function readPngDataUrl(file){
+  if(file.type!=='image/png' && !/\.png$/i.test(file.name)){ toast('PNGファイルを選んでください'); return Promise.resolve(null); }
+  if(file.size>2*1024*1024){ toast('PNGが大きすぎます（2MBまで）'); return Promise.resolve(null); }
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(reader.error);
+    reader.readAsDataURL(file);
+  }).catch(err=>{ toast('読込失敗: '+errText(err)); return null; });
+}
+async function saveDetailMapDataUrl(dataUrl){
+  const { error } = await sb.from('blocks').update({ detail_map_url:dataUrl }).eq('id', state.curBlock);
+  if(error){ toast('保存失敗（管理者権限が必要）: '+errText(error)); return false; }
+  const b=state.blocks.find(x=>x.id===state.curBlock);
+  if(b) b.detail_map_url=dataUrl;
+  return true;
+}
+async function handleAutoCsvFile(e){
+  const file=e.target.files && e.target.files[0];
+  e.target.value='';
+  if(!file) return;
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  if(!isCsvFile(file)) return toast('CSVファイルを選んでください');
+  if(file.size>2*1024*1024) return toast('CSVファイルが大きすぎます（2MBまで）');
+  const btn=$('#autoCreateFromCsvBtn');
+  btn.disabled=true; btn.textContent='読み取り中…';
+  try{
+    const candidates=parseCsvPlaceRows(await readCsvText(file));
+    if(!candidates.length){ toast('追加できる行がありません'); return; }
+    const existing=new Set(blockTopPlaces(state.curBlock).map(r=>placeImportKey({name:r.display_name||'', label:r.label||''})));
+    const seen=new Set();
+    const baseOrder=blockTopPlaces(state.curBlock).length;
+    const rows=[];
+    candidates.forEach(c=>{
+      const key=placeImportKey(c);
+      if(existing.has(key) || seen.has(key)) return;
+      seen.add(key);
+      rows.push({
+        block_id:state.curBlock, kind:c.kind, display_name:c.name||c.label, label:c.label||null,
+        status:c.status||'訪問可能', note:c.note||null, type:c.type||null, sort_order:baseOrder+rows.length
+      });
+    });
+    if(!rows.length){ toast('追加できる新しい候補がありません'); return; }
+    const preview=rows.slice(0,8).map((r,i)=>`${i+1}. ${r.display_name}${r.label?' ['+r.label+']':''}`).join('\n');
+    if(!confirm(`CSVから ${rows.length} 件の各戸カードを作成しますか？\n\n${preview}${rows.length>8?'\n…':''}`)) return;
+    const { error } = await sb.from('places').insert(rows);
+    if(error){ toast('自動作成失敗: '+errText(error)); return; }
+    toast(rows.length+'件のカードを作成しました');
+    await refreshNow();
+    renderPlaceList(state.curBlock); renderBlockManagePanel(state.curBlock); initDetailMap(state.curBlock); renderBroad();
+  }catch(err){
+    toast('CSV読込失敗: '+errText(err));
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='CSVからカード自動作成'; }
+  }
+}
+function isCsvFile(file){
+  return /\.csv$/i.test(file.name||'') || /csv/i.test(file.type||'');
+}
+async function readCsvText(file){
+  const buf=await file.arrayBuffer();
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+  catch(_){
+    try{ return new TextDecoder('shift_jis').decode(buf); }
+    catch(__){ return new TextDecoder().decode(buf); }
+  }
+}
+function parseCsvPlaceRows(text){
+  toast('CSVを読み取っています');
+  const grid=parseDelimitedRows(text);
+  if(!grid.length) return [];
+  const hasHeader=isPlaceHeaderRow(grid[0]);
+  const map=hasHeader ? placeHeaderMap(grid[0]) : {name:0,label:1,note:2,status:3,kind:4};
+  return grid.slice(hasHeader?1:0).map((row,idx)=>{
+    const name=cell(row,map.name), label=cell(row,map.label), note=cell(row,map.note);
+    const status=cell(row,map.status)||'訪問可能';
+    const kt=normalizePlaceKindAndType(cell(row,map.kind));
+    return {name:name||label, label, note, status, kind:kt.kind, type:kt.type, rowNo:idx};
+  }).filter(r=>r.name||r.label);
+}
+function parseDelimitedRows(text){
+  const src=String(text||'').replace(/^\uFEFF/,'');
+  const first=src.split(/\r?\n/).find(l=>l.trim())||'';
+  const delimiter=first.includes('\t') && !first.includes(',') ? '\t' : ',';
+  const rows=[]; let row=[], cur='', quote=false;
+  for(let i=0;i<src.length;i++){
+    const ch=src[i];
+    if(ch==='"'){
+      if(quote && src[i+1]==='"'){ cur+='"'; i++; }
+      else quote=!quote;
+    } else if(ch===delimiter && !quote){
+      row.push(cur.trim()); cur='';
+    } else if((ch==='\n' || ch==='\r') && !quote){
+      if(ch==='\r' && src[i+1]==='\n') i++;
+      row.push(cur.trim()); cur='';
+      if(row.some(Boolean)) rows.push(row);
+      row=[];
+    } else {
+      cur+=ch;
+    }
+  }
+  row.push(cur.trim());
+  if(row.some(Boolean)) rows.push(row);
+  return rows;
+}
+function cell(row, idx){ return idx==null || idx<0 ? '' : String(row[idx]??'').trim(); }
+function normalizeImportText(s){ return String(s||'').replace(/\s+/g,'').replace(/[|｜]/g,'').trim(); }
+function normalizeHeader(s){ return normalizeImportText(s).toLowerCase().replace(/[＿_\-()（）［\]【】]/g,''); }
+const PLACE_HEADER_ALIASES={
+  name:['名前','氏名','世帯名','表示名','表記','戸名','住人名','name','displayname','display_name'],
+  label:['番地','号','番号','番','地番','label','addressnumber'],
+  note:['メモ','備考','注記','note','remarks'],
+  status:['状態','ステータス','status'],
+  kind:['種別','種類','kind','type']
+};
+const PLACE_HEADER_LOOKUP=Object.fromEntries(Object.entries(PLACE_HEADER_ALIASES).flatMap(([key,vals])=>vals.map(v=>[normalizeHeader(v),key])));
+function headerRole(v){
+  const h=normalizeHeader(v);
+  if(PLACE_HEADER_LOOKUP[h]) return PLACE_HEADER_LOOKUP[h];
+  return Object.entries(PLACE_HEADER_ALIASES).find(([,vals])=>vals.some(a=>{
+    const n=normalizeHeader(a);
+    return n.length===1 ? h===n : h.includes(n);
+  }))?.[0] || null;
+}
+function isPlaceHeaderRow(row){ return row.filter(v=>headerRole(v)).length>=1; }
+function placeHeaderMap(row){
+  const map={};
+  row.forEach((v,i)=>{ const role=headerRole(v); if(role && map[role]==null) map[role]=i; });
+  return map;
+}
+function normalizePlaceType(v){
+  const s=String(v||'').toUpperCase().replace(/[＿_]/g,'-').replace(/\s+/g,' ');
+  const m=s.match(/\b(AL-M|ST-M|EV-M|LDR)(?:\s*-?\s*MGR)?\b/);
+  if(!m) return null;
+  const base=m[1];
+  return /MGR/.test(s) && base!=='LDR' ? `${base}-MGR` : base;
+}
+function normalizePlaceKindAndType(v){
+  const s=String(v||'').trim();
+  const type=normalizePlaceType(s);
+  if(type && type!=='LDR') return {kind:'集合住宅', type};
+  if(type==='LDR') return {kind:'戸建て', type};
+  return {kind:/集合|マンション|アパート|建物|号室/.test(s) ? '集合住宅' : '戸建て', type:null};
+}
+function placeImportKey(r){
+  return normalizeImportText(r.name||'')+'|'+normalizeImportText(r.label||'');
+}
+async function deletePlaceCard(placeId, label){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  if(!confirm(`「${label}」を削除しますか？\n集合住宅の場合は号室と訪問記録も削除されます。`)) return;
+  const { error } = await sb.from('places').delete().eq('id', placeId);
+  if(error){ toast('削除失敗（管理者権限が必要）: '+errText(error)); return; }
+  toast('カードを削除しました');
+  await refreshNow();
+  renderPlaceList(state.curBlock); renderBlockManagePanel(state.curBlock); initDetailMap(state.curBlock); renderBroad();
+}
+async function deleteAllBlockPlaces(){
+  if(state.role!=='admin') return toast('管理者のみ実行できます');
+  if(!state.curBlock) return;
+  const count=blockTopPlaces(state.curBlock).length;
+  if(!count) return toast('削除できるカードがありません');
+  if(!confirm(`この区域の各戸カード ${count} 件をすべて削除しますか？\n区域カード自体は残ります。集合住宅の号室と訪問記録も削除されます。`)) return;
+  if(!confirm('本当に全削除しますか？この操作は元に戻せません。')) return;
+  const { error } = await sb.from('places').delete().eq('block_id', state.curBlock).is('parent_id', null);
+  if(error){ toast('全削除失敗（管理者権限が必要）: '+errText(error)); return; }
+  toast('この区域のカードをすべて削除しました');
+  await refreshNow();
+  renderPlaceList(state.curBlock); renderBlockManagePanel(state.curBlock); initDetailMap(state.curBlock); renderBroad();
 }
 function detailSvg(W,H){
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#eef1ec"/>
@@ -865,8 +1181,10 @@ $('#saveBtn').addEventListener('click', async ()=>{
   renderBroad();
 });
 async function refreshNow(){
-  const { data } = await sb.from('place_stats').select('*');
-  if(data){ state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); }
+  try{
+    const data = await fetchStatsWithOrder();
+    state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData();
+  }catch(e){ console.warn('refreshNow failed', e); }
 }
 
 /* ---------- 管理: ユーザー ---------- */
@@ -1102,6 +1420,7 @@ function rerender(){
 
 /* ---------- 共通 ---------- */
 document.querySelectorAll('[data-go]').forEach(b=> b.addEventListener('click', ()=>go(b.dataset.go)));
+$('#blockManageBtn').addEventListener('click', toggleBlockManage);
 $('#editPinBtn').addEventListener('click', toggleEdit);
 document.querySelectorAll('[data-map-full]').forEach(b=> b.addEventListener('click', ()=>enterMapFullscreen(b.dataset.mapFull)));
 $('#exitMapFullBtn').addEventListener('click', exitMapFullscreen);
