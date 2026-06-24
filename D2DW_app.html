@@ -355,7 +355,7 @@ function renderPlaceList(id){
       let last=null; kids.forEach(k=>{ if(k.last_visit_at){ const t=new Date(k.last_visit_at); if(!last||t>last) last=t; }});
       div.onclick=()=>openApt(r.place_id);
       div.innerHTML=`<div class="main"><div class="name">${esc(r.display_name||'')} <span class="apttag">集合住宅</span>${r.has_manager?' <span class="apttag">管理人</span>':''}</div>
-        <div class="meta">全 <b>${kids.length}</b> 室 / 今訪問可 <b>${due}</b><br>前回訪問: <b>${last?fmtDate(last):'—'}</b></div></div><div class="chev">›</div>`;
+        <div class="meta">全 <b>${kids.length}</b> 室 / 今訪問可 <b>${due}</b><br>前回訪問: <b>${last?fmtDate(last):'—'}</b>${r.has_manager&&r.manager_hours?'<br>管理人: <b>'+esc(r.manager_hours)+'</b>':''}</div></div><div class="chev">›</div>`;
     } else {
       div.onclick=()=>openRecord(r.place_id,'block'); div.innerHTML=cardInner(r);
     }
@@ -445,7 +445,7 @@ function detailSvg(W,H){
 function openApt(id){
   state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">集合住宅</span>`;
-  $('#aptInfo').textContent=`${apt.has_manager?'管理人あり ・ ':''}全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
+  $('#aptInfo').textContent=`${apt.has_manager?('管理人'+(apt.manager_hours?('（'+apt.manager_hours+'）'):'あり')+' ・ '):''}全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
   const el=$('#unitList'); el.innerHTML='';
   kids.forEach(u=>{ const si=statusInfo(u); const div=document.createElement('div'); div.className='card'; div.onclick=()=>openRecord(u.place_id,'apt');
     div.innerHTML=`<div class="main"><div class="name">${esc(u.label||u.display_name||'')}号室 <span class="badge ${si.cls}">${si.label}</span></div>

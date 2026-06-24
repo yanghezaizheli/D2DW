@@ -103,6 +103,7 @@ create index if not exists idx_visits_visited  on visits(place_id, visited_at de
 alter table blocks add column if not exists type text;   -- 区域/エリアのタイプ
 alter table places add column if not exists type text;   -- 建物個別のタイプ上書き（任意）
 alter table places add column if not exists has_manager boolean;  -- 管理人(MGR)の手動上書き（任意。既定はコードのMGR有無で自動判定）
+alter table places add column if not exists manager_hours text;    -- 管理人の勤務日時（自由入力。例「平日 9:00-17:00」）
 
 create table if not exists visit_rules (
   type        text primary key,
@@ -111,10 +112,15 @@ create table if not exists visit_rules (
   met_days    int not null    -- 会えたのあと
 );
 insert into visit_rules (type, absent_days, flyer_days, met_days) values
-  ('LDR', 30, 30,  90),
-  ('ST-M',90, 30, 180),
-  ('EV-M',90, 30, 180),
-  ('AL-M',90, 30, 180)
+  ('LDR',  30, 30,  90),
+  ('ST-M', 90, 30, 180),
+  ('EV-M', 90, 30, 180),
+  ('AL-M', 90, 30, 180),
+  -- 管理人あり（-MGR）: ベース種別ごとに別の間隔
+  ('LDR-MGR',  120, 30, 180),
+  ('ST-M-MGR', 120, 30, 180),
+  ('EV-M-MGR', 120, 30, 180),
+  ('AL-M-MGR', 150, 30, 270)
 on conflict (type) do update set
   absent_days=excluded.absent_days, flyer_days=excluded.flyer_days, met_days=excluded.met_days;
 
@@ -153,9 +159,10 @@ with agg as (
       when upper(coalesce(p.type, b.type, '')) like '%AL-M%' then 'AL-M'
       when p.kind = '戸建て' then 'LDR'
       else 'EV-M'
-    end as eff_type,
+    end as base_type,
     -- 管理人(MGR): places.has_manager を優先、無ければコードに MGR を含むかで判定
     coalesce(p.has_manager, upper(coalesce(p.type, b.type, '')) like '%MGR%') as has_manager,
+    p.manager_hours,
     max(v.visited_at)                                     as last_visit_at,
     max(v.visited_at) filter (where v.outcome = '会えた') as last_met_at,
     count(*)          filter (where v.outcome = '不在')   as absent_count,
@@ -169,6 +176,7 @@ with agg as (
 )
 select
   a.*,
+  (a.base_type || case when a.has_manager then '-MGR' else '' end) as eff_type,
   case a.last_outcome
     when '会えた' then a.last_visit_at + (r.met_days    || ' days')::interval
     when '不在'   then a.last_visit_at + (r.absent_days || ' days')::interval
@@ -189,7 +197,7 @@ select
     )
   ) as is_due
 from agg a
-left join visit_rules r on r.type = a.eff_type;
+left join visit_rules r on r.type = (a.base_type || case when a.has_manager then '-MGR' else '' end);
 
 -- ============================================================
 -- 9) RLS（行レベルセキュリティ）
