@@ -203,8 +203,26 @@
 
   <!-- 号室一覧 -->
   <section id="s-apt" class="screen">
-    <div class="bar"><button class="back" data-go="block">← 区域</button><h1 id="aptTitle"></h1></div>
+    <div class="bar"><button class="back" data-go="block">← 区域</button><h1 id="aptTitle"></h1><button class="mini" id="bldgEditBtn" style="display:none">⚙ 建物設定</button></div>
     <div class="hint" id="aptInfo"></div>
+    <div id="bldgEditPanel" class="editpanel" style="display:none">
+      <div class="ehead">建物設定</div>
+      <div class="admin-grid" style="margin-top:8px">
+        <label class="wide" style="font-size:12px;color:var(--sub)">種別
+          <select id="bldgType" style="width:100%;margin-top:4px">
+            <option value="">自動（区域に従う）</option>
+            <option value="ST-M">階段</option>
+            <option value="EV-M">エレベーター</option>
+            <option value="AL-M">オートロック</option>
+          </select>
+        </label>
+        <label class="wide" style="font-size:13px;display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="bldgHasMgr" style="width:auto"> 管理人あり
+        </label>
+        <input class="wide" id="bldgMgrHours" type="text" placeholder="管理人の勤務日時（例: 平日 9:00-17:00）">
+      </div>
+      <div class="admin-actions" style="margin-top:8px"><button class="primarybtn" id="bldgSaveBtn">保存</button><button id="bldgCancelBtn">閉じる</button></div>
+    </div>
     <div class="sectiontitle">号室</div>
     <div id="unitList" class="list"></div>
   </section>
@@ -608,6 +626,8 @@ function detailSvg(W,H){
 /* ---------- 画面4: 号室 ---------- */
 function openApt(id){
   state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
+  $('#bldgEditBtn').style.display = state.role==='admin' ? '' : 'none';
+  $('#bldgEditPanel').style.display='none';
   const tlabel=BLDG_TYPE_LABEL[apt.base_type]||'集合住宅';
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">${tlabel}</span>`;
   $('#aptInfo').textContent=`${apt.has_manager?('管理人'+(apt.manager_hours?('（'+apt.manager_hours+'）'):'あり')+' ・ '):''}全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
@@ -618,6 +638,34 @@ function openApt(id){
     el.appendChild(div); });
   go('apt');
 }
+/* ---------- 建物設定（種別・管理人）: 管理者向け ---------- */
+$('#bldgEditBtn').addEventListener('click', async ()=>{
+  const id=state.curApt; if(!id) return;
+  const { data, error } = await sb.from('places').select('type,has_manager,manager_hours').eq('id',id).single();
+  if(error){ toast('取得失敗: '+errText(error)); return; }
+  $('#bldgType').value = data.type || '';
+  $('#bldgHasMgr').checked = !!data.has_manager;
+  $('#bldgMgrHours').value = data.manager_hours || '';
+  $('#bldgEditPanel').style.display='block';
+});
+$('#bldgCancelBtn').addEventListener('click', ()=> $('#bldgEditPanel').style.display='none');
+$('#bldgSaveBtn').addEventListener('click', async ()=>{
+  const id=state.curApt; if(!id) return;
+  const patch={
+    type: $('#bldgType').value || null,
+    has_manager: $('#bldgHasMgr').checked,
+    manager_hours: $('#bldgMgrHours').value.trim() || null
+  };
+  $('#bldgSaveBtn').disabled=true;
+  const { error } = await sb.from('places').update(patch).eq('id',id);
+  $('#bldgSaveBtn').disabled=false;
+  if(error){ toast('保存失敗（編集権限が必要）: '+errText(error)); return; }
+  toast('建物設定を保存しました');
+  $('#bldgEditPanel').style.display='none';
+  await refreshNow();   // place_stats を再取得
+  openApt(id);          // 再描画
+  renderBroad();
+});
 
 /* ---------- 画面3: 記録入力 ---------- */
 async function openRecord(id, from){
