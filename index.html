@@ -126,6 +126,11 @@
   .userrow .rowactions{grid-column:1 / -1;display:flex;gap:8px}
   .userrow .rowactions button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px;font-size:12px;font-weight:700}
   .userrow .rowactions .del{color:var(--red)}
+  /* 号室並び替え */
+  .card.sorting{cursor:default}
+  .sortctrls{display:flex;gap:6px}
+  .sortbtn{width:40px;height:40px;border:1px solid var(--line);background:#f7f8f7;border-radius:9px;font-size:18px;font-weight:700;cursor:pointer;color:var(--text)}
+  .sortbtn:disabled{opacity:.3;cursor:default}
   /* ピン編集: PC向け2ペイン全画面（編集モード時のみ／広い画面のみ。スマホは従来通り） */
   @media (min-width:760px){
     body.pin-edit{overflow:hidden}
@@ -203,7 +208,7 @@
 
   <!-- 号室一覧 -->
   <section id="s-apt" class="screen">
-    <div class="bar"><button class="back" data-go="block">← 区域</button><h1 id="aptTitle"></h1><button class="mini" id="bldgEditBtn" style="display:none">⚙ 建物設定</button></div>
+    <div class="bar"><button class="back" data-go="block">← 区域</button><h1 id="aptTitle"></h1><button class="mini" id="sortUnitsBtn" style="display:none">⇅ 並び替え</button><button class="mini" id="bldgEditBtn" style="display:none">⚙ 建物設定</button></div>
     <div class="hint" id="aptInfo"></div>
     <div id="bldgEditPanel" class="editpanel" style="display:none">
       <div class="ehead">建物設定</div>
@@ -624,19 +629,71 @@ function detailSvg(W,H){
 }
 
 /* ---------- 画面4: 号室 ---------- */
-function openApt(id){
+function unitLabelNum(r){ const n=parseInt(String(r.label||'').replace(/[^0-9]/g,''),10); return isNaN(n)?0:n; }
+async function openApt(id){
   state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
+  state.sortMode=false;
   $('#bldgEditBtn').style.display = state.role==='admin' ? '' : 'none';
+  $('#sortUnitsBtn').style.display = state.role==='admin' ? '' : 'none';
+  $('#sortUnitsBtn').textContent='⇅ 並び替え';
   $('#bldgEditPanel').style.display='none';
   const tlabel=BLDG_TYPE_LABEL[apt.base_type]||'集合住宅';
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">${tlabel}</span>`;
   $('#aptInfo').textContent=`${apt.has_manager?('管理人'+(apt.manager_hours?('（'+apt.manager_hours+'）'):'あり')+' ・ '):''}全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
-  const el=$('#unitList'); el.innerHTML='';
-  kids.forEach(u=>{ const si=statusInfo(u); const div=document.createElement('div'); div.className='card'; div.onclick=()=>openRecord(u.place_id,'apt');
-    div.innerHTML=`<div class="main"><div class="name">${esc(u.label||u.display_name||'')}号室 <span class="badge ${si.cls}">${si.label}</span></div>
-      <div class="meta">前回訪問 <b>${fmtDate(u.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(u.last_met_at)}</b> ・ 不在 <b>${u.absent_count||0}回</b>${si.sub?'<br>'+si.sub:''}</div></div><div class="chev">›</div>`;
-    el.appendChild(div); });
+  // 並び順(sort_order)を取得して適用（取得失敗時は号室番号順）
+  try{
+    const { data } = await sb.from('places').select('id,sort_order').eq('parent_id', id);
+    const m = data ? Object.fromEntries(data.map(r=>[r.id, r.sort_order??0])) : {};
+    kids.forEach(k=> k._sort = m[k.place_id] ?? 0);
+  }catch(e){ kids.forEach(k=> k._sort = 0); }
+  kids.sort((a,b)=> (a._sort-b._sort) || (unitLabelNum(a)-unitLabelNum(b)));
+  state.curKids = kids;
+  renderUnitList();
   go('apt');
+}
+function renderUnitList(){
+  const kids = state.curKids||[]; const el=$('#unitList'); el.innerHTML='';
+  kids.forEach((u,i)=>{
+    const div=document.createElement('div');
+    if(state.sortMode){
+      div.className='card sorting';
+      div.innerHTML=`<div class="main"><div class="name">${esc(u.label||u.display_name||'')}号室</div></div>`+
+        `<div class="sortctrls"><button class="sortbtn" data-mv="up" data-i="${i}"${i===0?' disabled':''}>↑</button>`+
+        `<button class="sortbtn" data-mv="down" data-i="${i}"${i===kids.length-1?' disabled':''}>↓</button></div>`;
+    } else {
+      const si=statusInfo(u); div.className='card'; div.onclick=()=>openRecord(u.place_id,'apt');
+      div.innerHTML=`<div class="main"><div class="name">${esc(u.label||u.display_name||'')}号室 <span class="badge ${si.cls}">${si.label}</span></div>`+
+        `<div class="meta">前回訪問 <b>${fmtDate(u.last_visit_at)}</b> ・ 前回面会 <b>${fmtDate(u.last_met_at)}</b> ・ 不在 <b>${u.absent_count||0}回</b>${si.sub?'<br>'+si.sub:''}</div></div><div class="chev">›</div>`;
+    }
+    el.appendChild(div);
+  });
+  if(state.sortMode) el.querySelectorAll('.sortbtn').forEach(b=> b.addEventListener('click', ()=> moveUnit(+b.dataset.i, b.dataset.mv)));
+}
+function moveUnit(i, dir){
+  const k=state.curKids, j = dir==='up'? i-1 : i+1;
+  if(!k || j<0 || j>=k.length) return;
+  [k[i],k[j]]=[k[j],k[i]]; renderUnitList();
+}
+async function toggleSortUnits(){
+  if(!state.curApt || state.role!=='admin') return;
+  if(!state.sortMode){
+    state.sortMode=true; $('#sortUnitsBtn').textContent='✓ 並び順を保存';
+    $('#bldgEditPanel').style.display='none'; renderUnitList(); return;
+  }
+  // 保存
+  const k=state.curKids||[]; $('#sortUnitsBtn').disabled=true;
+  const { error } = await (async()=>{
+    for(let i=0;i<k.length;i++){
+      const r=await sb.from('places').update({sort_order:i}).eq('id',k[i].place_id);
+      if(r.error) return r;
+    }
+    return {error:null};
+  })();
+  $('#sortUnitsBtn').disabled=false;
+  if(error){ toast('保存失敗（編集権限が必要）: '+errText(error)); return; }
+  k.forEach((u,i)=> u._sort=i);
+  toast('並び順を保存しました');
+  state.sortMode=false; $('#sortUnitsBtn').textContent='⇅ 並び替え'; renderUnitList();
 }
 /* ---------- 建物設定（種別・管理人）: 管理者向け ---------- */
 $('#bldgEditBtn').addEventListener('click', async ()=>{
@@ -649,6 +706,7 @@ $('#bldgEditBtn').addEventListener('click', async ()=>{
   $('#bldgEditPanel').style.display='block';
 });
 $('#bldgCancelBtn').addEventListener('click', ()=> $('#bldgEditPanel').style.display='none');
+$('#sortUnitsBtn').addEventListener('click', toggleSortUnits);
 $('#bldgSaveBtn').addEventListener('click', async ()=>{
   const id=state.curApt; if(!id) return;
   const patch={
@@ -853,7 +911,7 @@ function subscribeRealtime(){
 function rerender(){
   if(cur==='broad'){ renderBroad(); }
   else if(cur==='block'){ renderPlaceList(state.curBlock); }
-  else if(cur==='apt'){ openApt(state.curApt); }
+  else if(cur==='apt'){ if(!state.sortMode) openApt(state.curApt); }   // 並び替え中は再描画しない
 }
 
 /* ---------- 共通 ---------- */
