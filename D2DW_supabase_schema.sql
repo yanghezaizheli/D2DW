@@ -102,6 +102,7 @@ create index if not exists idx_visits_visited  on visits(place_id, visited_at de
 -- ============================================================
 alter table blocks add column if not exists type text;   -- 区域/エリアのタイプ
 alter table places add column if not exists type text;   -- 建物個別のタイプ上書き（任意）
+alter table places add column if not exists has_manager boolean;  -- 管理人(MGR)の手動上書き（任意。既定はコードのMGR有無で自動判定）
 
 create table if not exists visit_rules (
   type        text primary key,
@@ -143,8 +144,18 @@ with agg as (
     p.map_y,
     p.status,
     p.note,
-    -- 有効タイプ: 建物個別 > 区域 > 種別からの既定（戸建て=LDR / それ以外=EV-M）
-    coalesce(p.type, b.type, case when p.kind = '戸建て' then 'LDR' else 'EV-M' end) as eff_type,
+    -- 有効タイプ: コード文字列からベース種別(LDR/ST-M/EV-M/AL-M)を抽出（MGR等の付加を無視）。
+    -- 優先: 建物個別(p.type) > 区域(b.type) > 種別からの既定（戸建て=LDR / それ以外=EV-M）
+    case
+      when upper(coalesce(p.type, b.type, '')) like '%LDR%'  then 'LDR'
+      when upper(coalesce(p.type, b.type, '')) like '%ST-M%' then 'ST-M'
+      when upper(coalesce(p.type, b.type, '')) like '%EV-M%' then 'EV-M'
+      when upper(coalesce(p.type, b.type, '')) like '%AL-M%' then 'AL-M'
+      when p.kind = '戸建て' then 'LDR'
+      else 'EV-M'
+    end as eff_type,
+    -- 管理人(MGR): places.has_manager を優先、無ければコードに MGR を含むかで判定
+    coalesce(p.has_manager, upper(coalesce(p.type, b.type, '')) like '%MGR%') as has_manager,
     max(v.visited_at)                                     as last_visit_at,
     max(v.visited_at) filter (where v.outcome = '会えた') as last_met_at,
     count(*)          filter (where v.outcome = '不在')   as absent_count,
