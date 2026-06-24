@@ -682,6 +682,9 @@ function openBlock(id){
 }
 // 集合住宅の種別コード → 表示ラベル
 const BLDG_TYPE_LABEL={'ST-M':'階段','EV-M':'エレベーター','AL-M':'オートロック'};
+// 生の種別コード→ラベル（メゾネット等の細分類用）。無ければ base_type のラベルにフォールバック
+const RAW_TYPE_LABEL={'AL-M':'オートロック','EV-M':'エレベーター','ST-M':'階段','メゾネット':'メゾネット'};
+function bldgLabel(r){ return RAW_TYPE_LABEL[r.place_type] || BLDG_TYPE_LABEL[r.base_type] || '集合住宅'; }
 function renderPlaceList(id){
   const el=$('#placeList'); el.innerHTML='';
   blockTopPlaces(id).forEach(r=>{
@@ -690,7 +693,7 @@ function renderPlaceList(id){
       const kids=childrenOf(r.place_id), due=kids.filter(k=>k.is_due).length;
       let last=null; kids.forEach(k=>{ if(k.last_visit_at){ const t=new Date(k.last_visit_at); if(!last||t>last) last=t; }});
       div.onclick=()=>openApt(r.place_id);
-      const tlabel=BLDG_TYPE_LABEL[r.base_type]||'集合住宅';
+      const tlabel=bldgLabel(r);
       div.innerHTML=`<div class="main"><div class="name">${esc(r.display_name||'')} <span class="apttag">${tlabel}</span>${r.has_manager?' <span class="apttag">管理人勤務</span>':''}</div>
         <div class="meta">全 <b>${kids.length}</b> 室 / 今訪問可 <b>${due}</b><br>前回訪問: <b>${last?fmtDate(last):'—'}</b>${r.has_manager&&r.manager_hours?'<br>勤務: <b>'+esc(r.manager_hours)+'</b>':''}</div></div><div class="chev">›</div>`;
     } else {
@@ -794,16 +797,16 @@ function toggleBlockManage(){
     setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },140);   // レイアウト変化に追従
   }
 }
-const PLACE_FORM_TYPES=[['戸建て','戸建て'],['店・会社','店・会社'],['AL-M','オートロックマンション'],['EV-M','エレベーターマンション'],['ST-M','階段マンション'],['タウンハウス','タウンハウス']];
+const PLACE_FORM_TYPES=[['戸建て','戸建て'],['店・会社','店・会社'],['AL-M','オートロックマンション'],['EV-M','エレベーターマンション'],['ST-M','階段マンション'],['メゾネット','メゾネット'],['タウンハウス','タウンハウス']];
 const PLACE_STATUSES=['訪問可能','訪問拒否','他言語','JW','転居・空家'];
 function placeFormTypeValue(p){
   if(!p) return '戸建て';
-  if(['AL-M','EV-M','ST-M'].includes(p.type)) return p.type;       // マンション3種
-  if(p.type==='店・会社' || p.type==='タウンハウス') return p.type;   // 戸建て系の細分類
-  return p.kind==='集合住宅' ? 'EV-M' : '戸建て';                    // 旧データの既定
+  if(['AL-M','EV-M','ST-M'].includes(p.type)) return p.type;                 // マンション3種
+  if(p.type==='メゾネット' || p.type==='店・会社' || p.type==='タウンハウス') return p.type; // 細分類
+  return p.kind==='集合住宅' ? 'EV-M' : '戸建て';                            // 旧データの既定
 }
 function placeFormKindType(v){
-  if(v==='AL-M' || v==='EV-M' || v==='ST-M') return {kind:'集合住宅', type:v};  // マンション=号室を持つ
+  if(v==='AL-M' || v==='EV-M' || v==='ST-M' || v==='メゾネット') return {kind:'集合住宅', type:v};  // 号室を持つ
   if(v==='戸建て') return {kind:'戸建て', type:null};
   return {kind:'戸建て', type:v};  // 店・会社 / タウンハウス → 戸建て扱い（直接記録）、種別は type に保存
 }
@@ -1109,7 +1112,7 @@ async function openApt(id){
   $('#sortUnitsBtn').style.display = state.role==='admin' ? '' : 'none';
   $('#sortUnitsBtn').textContent='⇅ 並び替え';
   $('#bldgEditPanel').style.display='none';
-  const tlabel=BLDG_TYPE_LABEL[apt.base_type]||'集合住宅';
+  const tlabel=bldgLabel(apt);
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">${tlabel}</span>`;
   $('#aptInfo').textContent=`${apt.has_manager?('管理人'+(apt.manager_hours?('（'+apt.manager_hours+'）'):'あり')+' ・ '):''}全 ${kids.length} 室 / 今訪問可 ${due}。記録方法は各戸と同じです。`;
   // 並び順(sort_order)を取得して適用（取得失敗時は号室番号順）

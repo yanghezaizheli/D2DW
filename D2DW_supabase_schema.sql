@@ -26,7 +26,8 @@ exception when duplicate_object then null; end $$;
 create table if not exists members (
   id          uuid primary key references auth.users(id) on delete cascade,
   name        text not null,
-  role        text not null default 'member',   -- 'member' | 'admin'
+  email       text,
+  role        text not null default 'member',   -- 'admin' | 'moderator' | 'member' | 'viewer'
   created_at  timestamptz not null default now()
 );
 
@@ -150,6 +151,8 @@ with agg as (
     p.map_y,
     p.status,
     p.note,
+    p.sort_order,
+    p.type as place_type,   -- 生の種別コード（メゾネット等の細分類をカード表示に使う）
     -- 有効タイプ: コード文字列からベース種別(LDR/ST-M/EV-M/AL-M)を抽出（MGR等の付加を無視）。
     -- 優先: 建物個別(p.type) > 区域(b.type) > 種別からの既定（戸建て=LDR / それ以外=EV-M）
     case
