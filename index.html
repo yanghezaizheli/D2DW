@@ -126,6 +126,30 @@
   .userrow .rowactions{grid-column:1 / -1;display:flex;gap:8px}
   .userrow .rowactions button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px;font-size:12px;font-weight:700}
   .userrow .rowactions .del{color:var(--red)}
+  /* ピン編集: PC向け2ペイン全画面（編集モード時のみ／広い画面のみ。スマホは従来通り） */
+  @media (min-width:760px){
+    body.pin-edit{overflow:hidden}
+    body.pin-edit #app{max-width:none;padding-bottom:0}
+    body.pin-edit #s-block{
+      display:grid;height:100dvh;
+      grid-template-columns:1fr 360px;
+      grid-template-rows:auto 1fr;
+      grid-template-areas:"bar bar" "map panel";
+    }
+    body.pin-edit #s-block .bar{grid-area:bar}
+    body.pin-edit #s-block .mapwrap{grid-area:map;min-width:0;min-height:0;height:100%}
+    body.pin-edit #s-block .map{height:100%!important;width:100%!important}
+    body.pin-edit #s-block #editPanel{
+      grid-area:panel;margin:0;overflow-y:auto;
+      border-left:1px solid var(--line);border-top:none;border-bottom:none;
+    }
+    body.pin-edit #s-block .hint,
+    body.pin-edit #s-block #blockProgress,
+    body.pin-edit #s-block #placeList{display:none}
+    /* サイドバーは編集に集中できるよう少し大きめのチップ */
+    body.pin-edit #editPanel .echip{font-size:14px;padding:6px 12px}
+    body.pin-edit #editPanel .ehint{font-size:12px}
+  }
 </style>
 </head>
 <body>
@@ -245,7 +269,14 @@ const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 
 const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','broad','block','apt','rec'];
-function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0); }
+function go(name){
+  if(name!=='block' && state.editMode){  // ピン編集中に他画面へ移ったら編集を解除
+    state.editMode=false; state.editSel=null;
+    $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
+    document.body.classList.remove('pin-edit');
+  }
+  screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
+}
 let cur='loading';
 let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null};
 let broadMap, detailMap, userMarker;
@@ -467,6 +498,7 @@ $('#locateBtn').addEventListener('click', ()=>{
 function openBlock(id){
   state.curBlock=id; const b=state.blocks.find(x=>x.id===id);
   state.editMode=false; state.editSel=null; $('#editPanel').style.display='none'; $('#editPinBtn').textContent='📍 ピン編集';
+  document.body.classList.remove('pin-edit');
   $('#blockTitle').innerHTML=`${esc(b.name)} <span class="sub">区域 ${esc(b.code||'')}</span>`;
   const lv=leaves(id), due=lv.filter(r=>r.is_due).length;
   $('#blockProgress').textContent=`各戸カード（全 ${lv.length} 戸 / 訪問可能 ${due} / 対象外 ${lv.length-due}）`;
@@ -547,6 +579,7 @@ function toggleEdit(){
   state.editMode=!state.editMode; state.editSel=null;
   $('#editPinBtn').textContent = state.editMode ? '完了' : '📍 ピン編集';
   $('#editPanel').style.display = state.editMode ? 'block' : 'none';
+  document.body.classList.toggle('pin-edit', state.editMode);  // PC向け2ペイン全画面レイアウト切替
   if(state.editMode) renderEditPanel(state.curBlock);
   initDetailMap(state.curBlock);
 }
