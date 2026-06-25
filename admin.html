@@ -510,14 +510,15 @@ function geoQueryAddress(addr){
   if(/福岡県|福岡市|南区/.test(a)) return a;
   return GEO_ADDR_PREFIX+a;
 }
-// Nominatim で1件ジオコーディング（日本・1件）
+// 国土地理院(GSI)の住所検索で1件ジオコーディング（無料・キー不要・日本の番地に強い）
 async function geocodeAddress(addr){
-  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&q='+encodeURIComponent(addr);
-  const res=await fetch(url,{headers:{'Accept':'application/json'}});
+  const url='https://msearch.gsi.go.jp/address-search/AddressSearch?q='+encodeURIComponent(addr);
+  const res=await fetch(url);
   if(!res.ok) throw new Error('HTTP '+res.status);
   const arr=await res.json();
-  if(!arr.length) return null;
-  return { lat:parseFloat(arr[0].lat), lng:parseFloat(arr[0].lon) };
+  if(!arr.length || !arr[0].geometry) return null;
+  const [lng,lat]=arr[0].geometry.coordinates;   // GSIは [経度, 緯度] の順
+  return { lat, lng };
 }
 let geocoding=false;
 async function batchGeocodeApartments(forceAll){
@@ -529,7 +530,7 @@ async function batchGeocodeApartments(forceAll){
   });
   if(!targets.length){ toast(forceAll?'住所のある集合住宅がありません':'未取得（住所あり）の集合住宅はありません'); return; }
   const verb=forceAll?'全件再取得':'ジオコーディング';
-  if(!confirm(`${targets.length}件の集合住宅を${verb}します（約${Math.ceil(targets.length*1.1)}秒）。住所をOpenStreetMapに送信します。実行しますか?`)) return;
+  if(!confirm(`${targets.length}件の集合住宅を${verb}します（約${Math.ceil(targets.length*0.4)}秒）。住所を国土地理院の住所検索に送信します。実行しますか?`)) return;
   geocoding=true;
   const btns=[$('#geocodeBtn'),$('#geocodeAllBtn')]; btns.forEach(b=>b&&(b.disabled=true));
   let ok=0, fail=0;
@@ -541,7 +542,7 @@ async function batchGeocodeApartments(forceAll){
       if(geo){ await saveAptCoord(r.place_id, geo.lat, geo.lng); ok++; }
       else fail++;
     }catch(e){ fail++; console.warn('geocode failed', aptAddr(r), e); }
-    await new Promise(res=>setTimeout(res,1100));   // Nominatim レート制限（1req/秒）
+    await new Promise(res=>setTimeout(res,300));   // GSIへの連続アクセスを抑える
   }
   geocoding=false;
   btns.forEach(b=>b&&(b.disabled=false));
