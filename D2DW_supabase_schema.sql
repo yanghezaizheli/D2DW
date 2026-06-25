@@ -106,17 +106,22 @@ alter table visits add column if not exists block_id uuid references blocks(id) 
 update visits v set block_id = p.block_id
   from places p where p.id = v.place_id and v.block_id is distinct from p.block_id;
 
--- 挿入時に place_id から block_id を自動設定
+alter table visits alter column block_id set not null;
+
+-- 挿入/更新時に place_id から block_id を必ず自動設定
 create or replace function public.set_visit_block_id() returns trigger
 language plpgsql as $$
 begin
+  select block_id into new.block_id from places where id = new.place_id;
+
   if new.block_id is null then
-    select block_id into new.block_id from places where id = new.place_id;
+    raise exception 'place_id does not belong to a block: %', new.place_id;
   end if;
+
   return new;
 end; $$;
 drop trigger if exists trg_set_visit_block_id on visits;
-create trigger trg_set_visit_block_id before insert on visits
+create trigger trg_set_visit_block_id before insert or update on visits
   for each row execute function public.set_visit_block_id();
 
 create index if not exists idx_visits_block on visits(block_id);

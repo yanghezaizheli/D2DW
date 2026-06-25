@@ -1,9 +1,9 @@
 /* D2DW Service Worker — アプリシェルのオフラインキャッシュ
    バージョンを上げると古いキャッシュを破棄して更新します。 */
-const CACHE = 'd2dw-v1';
+const CACHE = 'd2dw-v13';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
-  './icon-192.png', './icon-512.png', './apple-touch-icon.png',
+  './assets/images/icon-192.png', './assets/images/icon-512.png', './assets/images/apple-touch-icon.png',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
   'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
