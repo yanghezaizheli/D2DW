@@ -492,7 +492,7 @@ function drawPins(id){
     const icon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,22],
       html:`<div class="pin" style="width:22px;height:22px;background:${color};"><span style="font-size:9px">${apt?'集':''}</span></div>`});
     const mk=L.marker([r.map_y,r.map_x],{icon}).addTo(detailMap)
-      .bindTooltip(placeTitle(r),{direction:'right',offset:[10,-18],className:'pin-label'});
+      .bindTooltip(placeTitle(r),{direction:'top',offset:[0,-18],className:'pin-label'});
     mk.on('click', ()=> apt?openApt(r.place_id):openRecord(r.place_id,'block'));
     state._pins.push(mk);
   });
