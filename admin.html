@@ -234,6 +234,13 @@ $('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBloc
 /* ---------- サイドバー（区域一覧） ---------- */
 function renderSidebar(){
   const el=$('#blockList'); el.innerHTML='';
+  const allTop=state.stats.filter(r=>r.kind==='戸建て'||r.kind==='号室');
+  const allDue=allTop.filter(r=>r.is_due).length;
+  const allDiv=document.createElement('div');
+  allDiv.className='blockitem'+(state.view==='overview'?' sel':'');
+  allDiv.innerHTML=`<div class="bn">全体カード</div><div class="bs">全${allTop.length}戸 / 訪問可${allDue} / 区域${state.blocks.length}</div>`;
+  allDiv.onclick=()=>{ state.view='overview'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
+  el.appendChild(allDiv);
   state.blocks.forEach(b=>{
     const lv=state.stats.filter(r=>r.block_id===b.id && (r.kind==='戸建て'||r.kind==='号室'));
     const due=lv.filter(r=>r.is_due).length;
@@ -248,9 +255,45 @@ function renderSidebar(){
 
 /* ---------- メイン表示の切替 ---------- */
 function renderContent(){
+  if(state.view==='overview'){ renderOverviewPanel(); return; }
   if(state.view==='users'){ renderUserPanel(); return; }
   if(state.curBlock){ renderCardPanel(); return; }
   $('#content').innerHTML='<h2 class="title">区域を選んでください</h2><p class="muted">左の区域一覧から選ぶと、その区域のカードを編集できます。</p>';
+}
+
+function renderOverviewPanel(){
+  exitPinFullscreen();
+  const blockRows=state.blocks.map(b=>{
+    const top=state.stats.filter(r=>r.block_id===b.id && (r.kind==='戸建て'||r.kind==='号室'));
+    const apt=state.stats.filter(r=>r.block_id===b.id && r.kind==='集合住宅' && !r.parent_id);
+    const due=top.filter(r=>r.is_due).length;
+    const reject=top.filter(r=>r.status==='訪問拒否').length;
+    return { b, top, apt, due, reject };
+  });
+  const total=blockRows.reduce((sum,r)=>sum+r.top.length,0);
+  const dueTotal=blockRows.reduce((sum,r)=>sum+r.due,0);
+  const rejectTotal=blockRows.reduce((sum,r)=>sum+r.reject,0);
+  const aptTotal=blockRows.reduce((sum,r)=>sum+r.apt.length,0);
+  $('#content').innerHTML=
+    `<h2 class="title">全体カード</h2>`+
+    `<p class="muted">全区域の件数確認用です。編集は左の個別区域を選んで行ってください。</p>`+
+    `<div class="panel"><h3>全体サマリー</h3>`+
+      `<div class="row"><div><div class="nm">全カード</div><div class="meta">戸建て・号室の合計</div></div><strong>${total}</strong></div>`+
+      `<div class="row"><div><div class="nm">訪問可能</div><div class="meta">期限到来・訪問対象</div></div><strong>${dueTotal}</strong></div>`+
+      `<div class="row"><div><div class="nm">訪問拒否</div><div class="meta">訪問対象外として扱うカード</div></div><strong>${rejectTotal}</strong></div>`+
+      `<div class="row"><div><div class="nm">集合住宅</div><div class="meta">親カード件数</div></div><strong>${aptTotal}</strong></div>`+
+    `</div>`+
+    `<div class="panel"><h3>区域別サマリー</h3>`+
+      (blockRows.map(r=>
+        `<div class="row"><div><div class="nm">${esc(r.b.name||'(無名区域)')}</div>`+
+        `<div class="meta">区域 ${esc(r.b.code||'')} ・ 全${r.top.length}戸 ・ 訪問可${r.due} ・ 拒否${r.reject} ・ 集合住宅${r.apt.length}</div></div>`+
+        `<div class="rowbtns"><button data-open-block="${r.b.id}">開く</button></div></div>`
+      ).join('') || '<div class="empty">区域がありません。</div>')+
+    `</div>`;
+  $('#content').querySelectorAll('[data-open-block]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.view='block'; state.curBlock=btn.dataset.openBlock; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null;
+    renderSidebar(); renderContent();
+  }));
 }
 
 /* ---------- カード管理 ---------- */
