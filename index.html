@@ -512,13 +512,19 @@ async function openAptFromMap(r){
   if(r.kind==='集合住宅') openApt(r.place_id);
   else openRecord(r.place_id,'block');
 }
+// 区域ピンの訪問可能数。種別フィルタ時はその種別のカードのみ集計（集合住宅の号室を除外）。
+function blockDueCount(b){
+  const lv=leaves(b.id);
+  if(!bf.types.size) return lv.filter(r=>r.is_due).length;
+  return lv.filter(r=>r.is_due && bf.types.has(placeFineType(r))).length;
+}
 let broadMarkers=[];
 function drawBroadPins(blocks){
   if(!broadMap) return;
   broadMarkers.forEach(m=>m.remove()); broadMarkers=[];
   if(aptPinMode()){ drawAptPins(blocks||filteredBlocks()); return; }
   (blocks||state.blocks).filter(b=>b.lat&&b.lng).forEach(b=>{
-    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
+    const due=blockDueCount(b);
     const color=due>0?'#2e9e6b':'#3b73c4';
     const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
       html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
