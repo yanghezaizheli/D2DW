@@ -420,13 +420,27 @@ function fmtDateTime(s){ if(!s) return '—'; const d=new Date(s); return `${d.g
 /* エリア番号順（admin.html の AREA_ORDER と同じ）。区域の area 名で並べ替え。 */
 const AREA_ORDER=['長住','長丘','皿山','柳河内','寺塚','大池','多賀','野間','玉川町','大楠','高宮','市崎','平和'];
 function areaRank(name){ const i=AREA_ORDER.indexOf(name); return i<0?999:i; }
-const BLK_TYPE_LABEL={'LDR':'戸建てメイン','AL-M':'オートロック','EV-M':'エレベーター','ST-M':'階段'};
-function blockBaseType(b){
-  const t=String(b.type||'').toUpperCase();
-  if(t.includes('AL-M')) return 'AL-M';
-  if(t.includes('EV-M')) return 'EV-M';
-  if(t.includes('ST-M')) return 'ST-M';
-  return 'LDR';
+// 種別フィルタ: カード(place)単位の細分類。区域に「その種別のカードが含まれるか」で絞る。
+// [値, 表示ラベル]。値は places.type の生値（戸建ては type 未設定なので kind で判定）。
+const BLK_FINE_TYPES=[
+  ['戸建て','戸建て'],['店・会社','店・会社'],['AL-M','オートロック'],
+  ['EV-M','エレベーター'],['ST-M','階段'],['メゾネット','メゾネット'],['タウンハウス','タウンハウス'],
+];
+const BLK_FINE_ORDER=BLK_FINE_TYPES.map(t=>t[0]);
+const BLK_FINE_LABEL=Object.fromEntries(BLK_FINE_TYPES);
+// 1カードの細分類キー（号室は親に集約済みなので対象外）
+function placeFineType(r){
+  if(r.kind==='号室') return '';
+  const t=String(r.place_type||'').trim();
+  if(t) return t;                       // 店・会社 / AL-M / EV-M / ST-M / メゾネット / タウンハウス
+  if(r.kind==='戸建て') return '戸建て';
+  return '';
+}
+// 区域に存在する細分類の集合
+function blockTypeSet(blockId){
+  const set=new Set();
+  state.stats.forEach(r=>{ if(r.block_id===blockId){ const t=placeFineType(r); if(t) set.add(t); } });
+  return set;
 }
 // 絞り込み状態
 const bf={ q:'', areas:new Set(), types:new Set(), sort:'area', built:false };
@@ -435,7 +449,7 @@ function filteredBlocks(){
   let arr=state.blocks.filter(b=>{
     if(q && !`${b.name||''} ${b.code||''} ${b.area||''}`.toLowerCase().includes(q)) return false;
     if(bf.areas.size && !bf.areas.has(b.area||'(未分類)')) return false;
-    if(bf.types.size && !bf.types.has(blockBaseType(b))) return false;
+    if(bf.types.size){ const ts=blockTypeSet(b.id); if(![...bf.types].some(t=>ts.has(t))) return false; }
     return true;
   });
   if(bf.sort==='due') arr.sort((a,c)=> leaves(c.id).filter(r=>r.is_due).length - leaves(a.id).filter(r=>r.is_due).length);
@@ -452,11 +466,10 @@ function buildBfPanels(){
     c.onclick=()=>{ bf.areas.has(a)?bf.areas.delete(a):bf.areas.add(a); c.classList.toggle('sel'); updateBfBadges(); renderBlockList(); };
     ap.appendChild(c);
   });
-  // 種別（区域に実在するベース種別のみ）
-  const types=[...new Set(state.blocks.map(blockBaseType))].sort((a,c)=>['LDR','AL-M','EV-M','ST-M'].indexOf(a)-['LDR','AL-M','EV-M','ST-M'].indexOf(c));
+  // 種別（カード単位の7種類・固定）
   const tp=$('#bfTypePanel'); tp.innerHTML='';
-  types.forEach(t=>{
-    const c=document.createElement('button'); c.type='button'; c.className='bf-chip'+(bf.types.has(t)?' sel':''); c.textContent=BLK_TYPE_LABEL[t]||t;
+  BLK_FINE_ORDER.forEach(t=>{
+    const c=document.createElement('button'); c.type='button'; c.className='bf-chip'+(bf.types.has(t)?' sel':''); c.textContent=BLK_FINE_LABEL[t]||t;
     c.onclick=()=>{ bf.types.has(t)?bf.types.delete(t):bf.types.add(t); c.classList.toggle('sel'); updateBfBadges(); renderBlockList(); };
     tp.appendChild(c);
   });
