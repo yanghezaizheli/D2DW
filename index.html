@@ -56,6 +56,10 @@
     color:var(--text);font-size:11px;font-weight:700;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,.16)}
   .legend{font-size:11px;color:var(--sub);padding:8px 16px;display:flex;gap:14px;flex-wrap:wrap}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  /* 地図の高さ変更ハンドル（下にスワイプで広げる） */
+  .map-resizer{display:flex;align-items:center;justify-content:center;height:22px;cursor:ns-resize;touch-action:none;background:var(--card)}
+  .map-resizer::before{content:'';width:44px;height:5px;border-radius:3px;background:var(--line)}
+  .map-resizer:active::before{background:var(--brand)}
   /* 区域一覧の絞り込み */
   .bfilter{padding:0 12px 4px}
   .bf-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;outline:none}
@@ -149,6 +153,7 @@
   <section id="s-broad" class="screen">
     <div class="bar"><h1>戸別訪問記録 <span class="sub" id="meName"></span></h1><button class="mini" id="signoutBtn">ログアウト</button></div>
     <div class="mapwrap"><div id="broadMap" class="map" style="height:260px"></div><button class="mapfull" data-map-full="broadMap" aria-label="地図を全画面表示">⛶</button></div>
+    <div class="map-resizer" id="broadMapResizer" aria-label="下にスワイプで地図を広げる"></div>
     <div class="fab" id="locateBtn">📍 現在地</div>
     <div class="legend"><span><i style="background:var(--green)"></i>訪問可能あり</span><span><i style="background:var(--blue)"></i>対象なし</span><span id="rtState">●同期待機</span></div>
     <div class="sectiontitle">区域一覧</div>
@@ -632,6 +637,27 @@ $('#locateBtn').addEventListener('click', ()=>{
     broadMap.setView([lat,lng],16); toast('現在地を表示しました');
   }, ()=>toast('位置情報が許可されていません'), {enableHighAccuracy:true,timeout:8000});
 });
+// 地図の高さをハンドルのドラッグ（下にスワイプ）で変更。保存して次回も維持。
+(function(){
+  const KEY='d2dw_broadmap_h', mapEl=$('#broadMap'), handle=$('#broadMapResizer');
+  if(!mapEl||!handle) return;
+  const saved=parseInt(localStorage.getItem(KEY)||'',10);
+  if(saved>0) mapEl.style.height=saved+'px';
+  let startY=0, startH=0, dragging=false;
+  handle.addEventListener('pointerdown', e=>{
+    dragging=true; startY=e.clientY; startH=mapEl.getBoundingClientRect().height;
+    handle.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  handle.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const h=Math.max(160, Math.min(Math.round(window.innerHeight*0.85), Math.round(startH+(e.clientY-startY))));
+    mapEl.style.height=h+'px';
+    if(broadMap) broadMap.invalidateSize();
+  });
+  const end=()=>{ if(!dragging) return; dragging=false; localStorage.setItem(KEY, parseInt(mapEl.style.height,10)||260); if(broadMap) broadMap.invalidateSize(); };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
+})();
 
 /* ---------- 画面2: 区域詳細 ---------- */
 async function openBlock(id){
