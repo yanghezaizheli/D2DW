@@ -189,6 +189,7 @@ const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','broad','block','apt','rec'];
 function go(name){
+  if(state?.fullMap) exitMapFullscreen();
   if(name==='broad') unsubscribeBlock();   // 広域に戻ったら区域購読を解除（不要なメッセージ受信を止める）
   screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
 }
