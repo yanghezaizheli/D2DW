@@ -102,7 +102,7 @@
   .bf-sortbtn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 12px;font-size:12px;color:var(--sub);font-family:inherit;cursor:pointer}
   .bf-sortbtn.active{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
   .bf-count{font-size:11px;color:var(--sub);padding:8px 2px 0}
-  .fab{position:absolute;left:16px;margin-top:-52px;background:#fff;border:1px solid var(--line);border-radius:999px;
+  .fab{position:absolute;right:16px;margin-top:-52px;background:#fff;border:1px solid var(--line);border-radius:999px;
     padding:8px 12px;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.12);cursor:pointer;z-index:600}
   .rec-head{padding:16px;background:var(--card);border-bottom:1px solid var(--line)}
   .rec-head .nm{font-size:18px;font-weight:700}.rec-head .ad{font-size:12px;color:var(--sub);margin-top:2px}
@@ -689,8 +689,9 @@ function initBroad(){
   if(broadMap) return;
   const withxy = state.blocks.filter(b=>b.lat&&b.lng);
   const c = withxy[0] ? [withxy[0].lat, withxy[0].lng] : [33.5524,130.4010];
-  broadMap=L.map('broadMap',{zoomControl:true}).setView(c,16);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(broadMap);
+  broadMap=L.map('broadMap',{zoomControl:true,attributionControl:false}).setView(c,16);
+  L.control.attribution({position:'bottomleft',prefix:false}).addAttribution('© OpenStreetMap').addTo(broadMap);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(broadMap);
   drawBroadPins(filteredBlocks());
 }
 // 絞り込みUIのイベント
