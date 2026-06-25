@@ -119,6 +119,7 @@
         <div class="side-h">区域一覧</div>
         <div id="blockList"></div>
         <div class="side-h">管理</div>
+        <button class="navbtn" id="navNewBlock">新規区域作成</button>
         <button class="navbtn" id="navUsers">ユーザー管理</button>
       </aside>
       <main class="content" id="content"></main>
@@ -229,6 +230,7 @@ async function reloadData(){
   state.byId=Object.fromEntries(state.stats.map(r=>[r.place_id,r]));
 }
 $('#reloadBtn').addEventListener('click', async ()=>{ try{ await reloadData(); renderSidebar(); renderContent(); toast('再読込しました'); }catch(e){ toast('再読込失敗: '+errText(e)); } });
+$('#navNewBlock').addEventListener('click', ()=>{ state.view='newBlock'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); });
 $('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBlock=null; renderSidebar(); renderContent(); });
 
 /* ---------- サイドバー（区域一覧） ---------- */
@@ -251,14 +253,58 @@ function renderSidebar(){
     el.appendChild(div);
   });
   $('#navUsers').classList.toggle('sel', state.view==='users');
+  $('#navNewBlock').classList.toggle('sel', state.view==='newBlock');
 }
 
 /* ---------- メイン表示の切替 ---------- */
 function renderContent(){
   if(state.view==='overview'){ renderOverviewPanel(); return; }
+  if(state.view==='newBlock'){ renderNewBlockPanel(); return; }
   if(state.view==='users'){ renderUserPanel(); return; }
   if(state.curBlock){ renderCardPanel(); return; }
   $('#content').innerHTML='<h2 class="title">区域を選んでください</h2><p class="muted">左の区域一覧から選ぶと、その区域のカードを編集できます。</p>';
+}
+
+function renderNewBlockPanel(){
+  exitPinFullscreen();
+  $('#content').innerHTML=
+    `<h2 class="title">新規区域作成</h2>`+
+    `<p class="muted">区域カードの入れ物を作成します。作成後、詳細地図PNG差替とカード追加を行ってください。</p>`+
+    `<div class="panel"><h3>区域情報</h3>`+
+      `<div class="grid">`+
+        `<label class="fld">区域番号<input id="nbCode" placeholder="例: 01-2-3"></label>`+
+        `<label class="fld">区域名<input id="nbName" placeholder="例: 01長住2-3"></label>`+
+        `<label class="fld">エリア<input id="nbArea" placeholder="例: 長住"></label>`+
+        `<label class="fld">区域タイプ<input id="nbType" placeholder="例: LDR / EV-M / ST-M / AL-M"></label>`+
+        `<label class="fld">代表緯度<input id="nbLat" inputmode="decimal" placeholder="例: 33.551234"></label>`+
+        `<label class="fld">代表経度<input id="nbLng" inputmode="decimal" placeholder="例: 130.401234"></label>`+
+      `</div>`+
+      `<div class="hint" style="margin-top:10px">緯度・経度はスマホ側の広域地図ピン用です。未入力でも区域は作成できます。</div>`+
+      `<div class="actions"><button class="btn primary" id="nbSave">区域を作成</button></div>`+
+    `</div>`;
+  $('#nbSave').addEventListener('click', createBlock);
+}
+
+async function createBlock(){
+  const name=$('#nbName').value.trim();
+  const code=$('#nbCode').value.trim();
+  const area=$('#nbArea').value.trim();
+  const type=$('#nbType').value.trim();
+  const latRaw=$('#nbLat').value.trim();
+  const lngRaw=$('#nbLng').value.trim();
+  if(!name) return toast('区域名を入力してください');
+  const lat=latRaw?Number(latRaw):null;
+  const lng=lngRaw?Number(lngRaw):null;
+  if((latRaw && !Number.isFinite(lat)) || (lngRaw && !Number.isFinite(lng))) return toast('緯度・経度は数値で入力してください');
+  const patch={ name, code:code||null, area:area||null, type:type||null, lat, lng };
+  const btn=$('#nbSave'); btn.disabled=true;
+  const { data, error } = await sb.from('blocks').insert(patch).select('*').single();
+  btn.disabled=false;
+  if(error){ toast('区域作成失敗: '+errText(error)); return; }
+  toast('区域を作成しました');
+  await reloadData();
+  state.view='block'; state.curBlock=data.id; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null;
+  renderSidebar(); renderContent();
 }
 
 function renderOverviewPanel(){
