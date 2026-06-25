@@ -194,7 +194,7 @@ function go(name){
   screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
 }
 let cur='loading';
-let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null, returnMapAfterSave:null, returnScrollAfterSave:null};
+let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null, returnMapView:null, returnScrollView:null};
 let broadMap, detailMap, userMarker;
 const ROLE_ALIAS = {'管理者':'admin','司会者':'moderator','利用者':'member','閲覧者':'viewer','admin':'admin','moderator':'moderator','member':'member','viewer':'viewer'};
 function normalizeRole(v){ return ROLE_ALIAS[String(v||'').trim().toLowerCase()] || ROLE_ALIAS[String(v||'').trim()] || 'member'; }
@@ -553,15 +553,15 @@ async function openRecord(id, from){
   }
   state.curPlace=id; state.recFrom=from; state.sel=null;
   const r=state.byId[id];
-  state.returnMapAfterSave = captureReturnMapAfterSave(from, r);
-  state.returnScrollAfterSave = state.returnMapAfterSave ? null : captureReturnScrollAfterSave(from);
+  state.returnMapView = captureReturnMapView(from, r);
+  state.returnScrollView = state.returnMapView ? null : captureReturnScrollView(from);
   $('#recName').textContent = r.kind==='号室' ? ((r.label||'')+'号室') : (r.display_name||r.label||'');
   $('#recAddr').textContent = r.address||'';
   $('#stLastVisit').textContent=fmtDate(r.last_visit_at);
   $('#stLastMet').textContent=fmtDate(r.last_met_at);
   $('#stAbsent').textContent=(r.absent_count||0)+'回';
   $('#recNote').value=''; document.querySelectorAll('.obtn').forEach(b=>b.className='obtn'); $('#saveBtn').disabled=true;
-  $('#recBack').onclick=()=>go(from==='apt'?'apt':'block');
+  $('#recBack').onclick=()=>returnFromRecord();
   go('rec');
   const { data } = await sb.from('visits').select('outcome,visited_at').eq('place_id',id).order('visited_at',{ascending:false});
   const h=$('#recHist');
@@ -584,14 +584,10 @@ $('#saveBtn').addEventListener('click', async ()=>{
   if(error){ toast('保存失敗: '+(error.message||'通信エラー')); $('#saveBtn').disabled=false; return; }
   toast('記録しました（同期）');
   await refreshOnePlace(state.curPlace);   // 全件再取得せず、記録した戸だけ更新
-  const returnMap = state.returnMapAfterSave;
-  const returnScroll = state.returnScrollAfterSave;
-  state.returnMapAfterSave = null;
-  state.returnScrollAfterSave = null;
+  const view = consumeReturnView();
   go(state.recFrom==='apt'?'apt':'block');
   if(state.recFrom==='apt') await openApt(state.curApt); else { renderPlaceList(state.curBlock); initDetailMap(state.curBlock); }
-  if(returnMap) restoreMapAfterSave(returnMap);
-  else if(returnScroll) restoreScrollAfterSave(returnScroll);
+  restoreReturnView(view);
   renderBroad();
 });
 async function refreshNow(){
@@ -635,19 +631,29 @@ function resizeMap(id){
   const map = mapById(id);
   if(map) setTimeout(()=>map.invalidateSize(), 80);
 }
-function captureReturnMapAfterSave(from, place){
+function captureReturnMapView(from, place){
   if(from!=='block' || place.kind!=='戸建て' || state.fullMap!=='detailMap' || !detailMap) return null;
   const center = detailMap.getCenter();
   return { id:'detailMap', center:[center.lat, center.lng], zoom:detailMap.getZoom() };
 }
-function captureReturnScrollAfterSave(from){
+function captureReturnScrollView(from){
   const screen = from==='apt' ? 'apt' : 'block';
   return { screen, y:window.scrollY || window.pageYOffset || 0 };
 }
-function restoreMapAfterSave(view, attempt=0){
+function consumeReturnView(){
+  const view = { map:state.returnMapView, scroll:state.returnScrollView };
+  state.returnMapView = null;
+  state.returnScrollView = null;
+  return view;
+}
+function restoreReturnView(view){
+  if(view?.map) restoreMapView(view.map);
+  else if(view?.scroll) restoreScrollView(view.scroll);
+}
+function restoreMapView(view, attempt=0){
   const map = mapById(view.id);
   if(!map){
-    if(attempt < 12) setTimeout(()=>restoreMapAfterSave(view, attempt+1), 80);
+    if(attempt < 12) setTimeout(()=>restoreMapView(view, attempt+1), 80);
     return;
   }
   enterMapFullscreen(view.id);
@@ -658,9 +664,14 @@ function restoreMapAfterSave(view, attempt=0){
     freshMap.setView(view.center, view.zoom, {animate:false});
   }, 120);
 }
-function restoreScrollAfterSave(view){
+function restoreScrollView(view){
   if(cur !== view.screen) return;
   setTimeout(()=>window.scrollTo({top:view.y, left:0, behavior:'auto'}), 60);
+}
+function returnFromRecord(){
+  const view = consumeReturnView();
+  go(state.recFrom==='apt'?'apt':'block');
+  restoreReturnView(view);
 }
 function enterMapFullscreen(id){
   const el = $('#'+id);
