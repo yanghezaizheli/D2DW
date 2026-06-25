@@ -492,11 +492,25 @@ function renderBlockList(){
     el.appendChild(div);
   });
   $('#bfCount').textContent=`${arr.length} 件表示中（全 ${state.blocks.length} 区域）`;
+  drawBroadPins(arr);     // 絞り込み結果を地図ピンにも反映（全画面マップも同じインスタンスなので連動）
 }
 function renderBroad(){
   buildBfPanels();        // データ最新化に合わせてチップを作り直す（選択状態は bf から復元）
   updateBfBadges();
   renderBlockList();
+}
+let broadMarkers=[];
+function drawBroadPins(blocks){
+  if(!broadMap) return;
+  broadMarkers.forEach(m=>m.remove()); broadMarkers=[];
+  (blocks||state.blocks).filter(b=>b.lat&&b.lng).forEach(b=>{
+    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
+    const color=due>0?'#2e9e6b':'#3b73c4';
+    const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
+      html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
+    const m=L.marker([b.lat,b.lng],{icon}).addTo(broadMap).on('click',()=>openBlock(b.id)).bindTooltip(b.name,{direction:'top',offset:[0,-24]});
+    broadMarkers.push(m);
+  });
 }
 function initBroad(){
   if(broadMap) return;
@@ -504,13 +518,7 @@ function initBroad(){
   const c = withxy[0] ? [withxy[0].lat, withxy[0].lng] : [33.5524,130.4010];
   broadMap=L.map('broadMap',{zoomControl:true}).setView(c,16);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(broadMap);
-  withxy.forEach(b=>{
-    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
-    const color=due>0?'#2e9e6b':'#3b73c4';
-    const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
-      html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
-    L.marker([b.lat,b.lng],{icon}).addTo(broadMap).on('click',()=>openBlock(b.id)).bindTooltip(b.name,{direction:'top',offset:[0,-24]});
-  });
+  drawBroadPins(filteredBlocks());
 }
 // 絞り込みUIのイベント
 $('#bfSearch').addEventListener('input', e=>{ bf.q=e.target.value; renderBlockList(); });
