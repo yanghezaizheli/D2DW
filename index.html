@@ -538,8 +538,8 @@ function filteredBlocks(){
     if(bf.types.size){ const ts=blockTypeSet(b.id); if(![...bf.types].some(t=>ts.has(t))) return false; }
     return true;
   });
-  if(bf.sort==='due') arr.sort((a,c)=> leaves(c.id).filter(r=>r.is_due).length - leaves(a.id).filter(r=>r.is_due).length);
-  else if(bf.sort==='count') arr.sort((a,c)=> leaves(c.id).length - leaves(a.id).length);
+  if(bf.sort==='due') arr.sort((a,c)=> blockDueCount(c) - blockDueCount(a));   // 種別フィルタ時はその種別の訪問可数で降順
+  else if(bf.sort==='count') arr.sort((a,c)=> filteredLeaves(c).length - filteredLeaves(a).length);
   else arr.sort((a,c)=> areaRank(a.area)-areaRank(c.area) || (a.name||'').localeCompare(c.name||'','ja',{numeric:true}));
   return arr;
 }
