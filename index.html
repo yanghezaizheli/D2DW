@@ -615,15 +615,39 @@ async function loadAll(){
     else { toast('データ取得に失敗しました（オフライン時は一度オンラインで開いてください）'); }
   }
 }
-let refreshTimer;
-async function refreshStats(){
-  clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(async ()=>{
-    try{
-      const data = await fetchStatsWithOrder();
-      state.stats=data; state.byId=Object.fromEntries(data.map(r=>[r.place_id,r])); cacheData(); rerender();
-    }catch(e){ console.warn('refreshStats failed', e); }
-  }, 250);
+/* ---------- リアルタイム差分更新 ----------
+   変更があった place のみ place_stats を取り直す（全件再取得を避け、転送量を最小化）。
+   1件の記録が全端末でフル再取得されていた旧方式を置き換える。 */
+function mergePlaceRow(row){
+  const prev=state.byId[row.place_id];
+  const merged={ ...row, sort_order: row.sort_order ?? prev?.sort_order ?? 0 };
+  state.byId[row.place_id]=merged;
+  const idx=state.stats.findIndex(r=>r.place_id===row.place_id);
+  if(idx>=0) state.stats[idx]=merged; else state.stats.push(merged);
+}
+let rtPending=new Set(), rtTimer;
+function queuePlaceUpdate(pid){
+  if(!pid) return;
+  rtPending.add(pid);
+  clearTimeout(rtTimer);
+  rtTimer=setTimeout(flushPlaceUpdates, 250);   // 連続更新をまとめて1リクエストに
+}
+async function flushPlaceUpdates(){
+  const pids=[...rtPending]; rtPending.clear();
+  if(!pids.length) return;
+  try{
+    const { data, error } = await sb.from('place_stats').select('*').in('place_id', pids);
+    if(error) throw error;
+    (data||[]).forEach(mergePlaceRow);
+    cacheData(); rerender();
+  }catch(e){ console.warn('flushPlaceUpdates failed', e); }
+}
+async function refreshOnePlace(pid){   // 記録保存後、自分の画面用に1件だけ取り直す
+  if(!pid) return;
+  try{
+    const { data } = await sb.from('place_stats').select('*').eq('place_id', pid);
+    if(data && data[0]){ mergePlaceRow(data[0]); cacheData(); }
+  }catch(e){ console.warn('refreshOnePlace failed', e); }
 }
 
 /* ---------- 集計ヘルパ ---------- */
@@ -1270,7 +1294,7 @@ $('#saveBtn').addEventListener('click', async ()=>{
   const { error } = await sb.from('visits').insert({ place_id:state.curPlace, outcome:state.sel, member_id:state.user.id, note:$('#recNote').value.trim()||null });
   if(error){ toast('保存失敗: '+(error.message||'通信エラー')); $('#saveBtn').disabled=false; return; }
   toast('記録しました（同期）');
-  await refreshNow();
+  await refreshOnePlace(state.curPlace);   // 全件再取得せず、記録した戸だけ更新
   go(state.recFrom==='apt'?'apt':'block');
   if(state.recFrom==='apt') openApt(state.curApt); else { renderPlaceList(state.curBlock); initDetailMap(state.curBlock); }
   renderBroad();
@@ -1504,7 +1528,9 @@ async function nbCreateBlock(){
 /* ---------- リアルタイム同期 ---------- */
 function subscribeRealtime(){
   sb.channel('rt-visits')
-    .on('postgres_changes', { event:'*', schema:'public', table:'visits' }, ()=>{ refreshStats(); })
+    .on('postgres_changes', { event:'*', schema:'public', table:'visits' }, payload=>{
+      queuePlaceUpdate(payload.new?.place_id || payload.old?.place_id);   // 変わった戸だけ差分取得
+    })
     .subscribe(status=>{ $('#rtState').textContent = status==='SUBSCRIBED' ? '●同期中' : '●'+status; });
 }
 function rerender(){
