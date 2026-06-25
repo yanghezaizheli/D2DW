@@ -276,27 +276,32 @@ function renderNewBlockPanel(){
         `<label class="fld">区域名<input id="nbName" placeholder="例: 01長住2-3"></label>`+
         `<label class="fld">エリア<input id="nbArea" placeholder="例: 長住"></label>`+
         `<label class="fld">区域タイプ<input id="nbType" placeholder="例: LDR / EV-M / ST-M / AL-M"></label>`+
-        `<label class="fld">代表緯度<input id="nbLat" inputmode="decimal" placeholder="例: 33.551234"></label>`+
-        `<label class="fld">代表経度<input id="nbLng" inputmode="decimal" placeholder="例: 130.401234"></label>`+
+        `<label class="fld wide">代表座標<input id="nbLatLng" inputmode="decimal" placeholder="例: 33.551234, 130.401234"></label>`+
       `</div>`+
-      `<div class="hint" style="margin-top:10px">緯度・経度はスマホ側の広域地図ピン用です。未入力でも区域は作成できます。</div>`+
+      `<div class="hint" style="margin-top:10px">代表座標はスマホ側の広域地図ピン用です。「緯度, 経度」の順で入力してください。未入力でも区域は作成できます。</div>`+
       `<div class="actions"><button class="btn primary" id="nbSave">区域を作成</button></div>`+
     `</div>`;
   $('#nbSave').addEventListener('click', createBlock);
 }
 
+function parseLatLngInput(raw){
+  const value=String(raw||'').trim();
+  if(!value) return { lat:null, lng:null };
+  const parts=value.split(/[,\s、，]+/).filter(Boolean);
+  if(parts.length!==2) return null;
+  const lat=Number(parts[0]), lng=Number(parts[1]);
+  if(!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
 async function createBlock(){
   const name=$('#nbName').value.trim();
   const code=$('#nbCode').value.trim();
   const area=$('#nbArea').value.trim();
   const type=$('#nbType').value.trim();
-  const latRaw=$('#nbLat').value.trim();
-  const lngRaw=$('#nbLng').value.trim();
+  const latLng=parseLatLngInput($('#nbLatLng').value);
   if(!name) return toast('区域名を入力してください');
-  const lat=latRaw?Number(latRaw):null;
-  const lng=lngRaw?Number(lngRaw):null;
-  if((latRaw && !Number.isFinite(lat)) || (lngRaw && !Number.isFinite(lng))) return toast('緯度・経度は数値で入力してください');
-  const patch={ name, code:code||null, area:area||null, type:type||null, lat, lng };
+  if(!latLng) return toast('代表座標は「緯度, 経度」で入力してください');
+  const patch={ name, code:code||null, area:area||null, type:type||null, lat:latLng.lat, lng:latLng.lng };
   const btn=$('#nbSave'); btn.disabled=true;
   const { data, error } = await sb.from('blocks').insert(patch).select('*').single();
   btn.disabled=false;
@@ -386,7 +391,7 @@ function renderCardPanel(){
       `<div id="detailMap"></div>`+
       `<div id="editPanel" style="display:${state.editMode?'block':'none'}"></div>`+
     `</div>`+
-    `<div class="panel"><h3>${editing?'カードを編集':'単体カードを追加'}</h3>`+
+    `<div class="panel" id="cardFormPanel"><h3>${editing?'カードを編集':'単体カードを追加'}</h3>`+
       `<div class="grid">`+
         `<label class="fld wide">種別<select id="pmKind">`+
           `<option value="戸建て"${!isApt?' selected':''}>戸建てタイプ（直接記録）</option>`+
@@ -571,10 +576,22 @@ function renderEditPanel(id){
   const chip=r=>`<span class="echip${state.editSel===r.place_id?' sel':''}" data-pid="${r.place_id}">${placeTitle(r)}</span>`;
   $('#editPanel').innerHTML=
     `<div class="ehead">未配置 ${unplaced.length}／配置済 ${placed.length}</div>`+
+    `<div class="actions" style="margin-top:8px;margin-bottom:8px"><button class="btn primary" id="addCardFromPinsBtn">単体カードを追加</button></div>`+
     `<div class="ehint">①下の戸を選ぶ → ②地図をクリックで設置。設置済みピンはドラッグで微調整できます。</div>`+
     `<div class="echips">${unplaced.map(chip).join('')||'<i>すべて配置済みです</i>'}</div>`+
     (placed.length?`<div class="ehead2">配置済み（選ぶと移動）</div><div class="echips">${placed.map(chip).join('')}</div>`:'');
+  $('#addCardFromPinsBtn').addEventListener('click', openNewPlaceFormFromPinEditor);
   $('#editPanel').querySelectorAll('.echip').forEach(c=>c.addEventListener('click',()=>{ state.editSel=c.dataset.pid; renderEditPanel(id); drawPins(id); }));
+}
+function openNewPlaceFormFromPinEditor(){
+  state.editingPlaceId=null; state.editingPlace=null; state.editSel=null;
+  exitPinFullscreen();
+  renderCardPanel();
+  setTimeout(()=>{
+    const panel=$('#cardFormPanel');
+    if(panel) panel.scrollIntoView({behavior:'smooth', block:'start'});
+    if($('#pmName')) $('#pmName').focus();
+  },80);
 }
 async function handleDetailMapFile(e){
   const file=e.target.files && e.target.files[0]; e.target.value='';
