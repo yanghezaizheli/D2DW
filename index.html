@@ -194,7 +194,7 @@ function go(name){
   screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
 }
 let cur='loading';
-let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null, returnFullMapAfterSave:null};
+let sb, state={user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, curApt:null, curPlace:null, recFrom:'block', sel:null, fullMap:null, returnMapAfterSave:null};
 let broadMap, detailMap, userMarker;
 const ROLE_ALIAS = {'管理者':'admin','司会者':'moderator','利用者':'member','閲覧者':'viewer','admin':'admin','moderator':'moderator','member':'member','viewer':'viewer'};
 function normalizeRole(v){ return ROLE_ALIAS[String(v||'').trim().toLowerCase()] || ROLE_ALIAS[String(v||'').trim()] || 'member'; }
@@ -553,7 +553,7 @@ async function openRecord(id, from){
   }
   state.curPlace=id; state.recFrom=from; state.sel=null;
   const r=state.byId[id];
-  state.returnFullMapAfterSave = (from==='block' && r.kind==='戸建て' && state.fullMap==='detailMap') ? state.fullMap : null;
+  state.returnMapAfterSave = captureReturnMapAfterSave(from, r);
   $('#recName').textContent = r.kind==='号室' ? ((r.label||'')+'号室') : (r.display_name||r.label||'');
   $('#recAddr').textContent = r.address||'';
   $('#stLastVisit').textContent=fmtDate(r.last_visit_at);
@@ -583,11 +583,11 @@ $('#saveBtn').addEventListener('click', async ()=>{
   if(error){ toast('保存失敗: '+(error.message||'通信エラー')); $('#saveBtn').disabled=false; return; }
   toast('記録しました（同期）');
   await refreshOnePlace(state.curPlace);   // 全件再取得せず、記録した戸だけ更新
-  const returnFullMap = state.returnFullMapAfterSave;
-  state.returnFullMapAfterSave = null;
+  const returnMap = state.returnMapAfterSave;
+  state.returnMapAfterSave = null;
   go(state.recFrom==='apt'?'apt':'block');
   if(state.recFrom==='apt') openApt(state.curApt); else { renderPlaceList(state.curBlock); initDetailMap(state.curBlock); }
-  if(returnFullMap) setTimeout(()=>enterMapFullscreen(returnFullMap), 180);
+  if(returnMap) restoreMapAfterSave(returnMap);
   renderBroad();
 });
 async function refreshNow(){
@@ -630,6 +630,25 @@ function mapById(id){ return id==='broadMap' ? broadMap : id==='detailMap' ? det
 function resizeMap(id){
   const map = mapById(id);
   if(map) setTimeout(()=>map.invalidateSize(), 80);
+}
+function captureReturnMapAfterSave(from, place){
+  if(from!=='block' || place.kind!=='戸建て' || state.fullMap!=='detailMap' || !detailMap) return null;
+  const center = detailMap.getCenter();
+  return { id:'detailMap', center:[center.lat, center.lng], zoom:detailMap.getZoom() };
+}
+function restoreMapAfterSave(view, attempt=0){
+  const map = mapById(view.id);
+  if(!map){
+    if(attempt < 12) setTimeout(()=>restoreMapAfterSave(view, attempt+1), 80);
+    return;
+  }
+  enterMapFullscreen(view.id);
+  setTimeout(()=>{
+    const freshMap = mapById(view.id);
+    if(!freshMap) return;
+    freshMap.invalidateSize();
+    freshMap.setView(view.center, view.zoom, {animate:false});
+  }, 120);
 }
 function enterMapFullscreen(id){
   const el = $('#'+id);
