@@ -448,6 +448,8 @@ function openBlockFromOverview(blockId){
 function overviewApartments(){
   return state.stats.filter(r=>r.kind==='集合住宅' && !r.parent_id);
 }
+// このアプリでは住所は label に格納されている（address は未使用）。両対応で取得。
+function aptAddr(r){ return String(r.label||r.address||'').trim(); }
 function initOverviewMap(){
   const el=$('#overviewMap');
   if(!el) return;
@@ -490,7 +492,7 @@ function updateGeocodeStat(){
   const el=$('#geocodeStat'); if(!el) return;
   const apts=overviewApartments();
   const done=apts.filter(r=>Number.isFinite(Number(r.lat))&&Number.isFinite(Number(r.lng))).length;
-  const need=apts.filter(r=>(!Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng))) && (r.address||'').trim()).length;
+  const need=apts.filter(r=>(!Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng))) && aptAddr(r)).length;
   el.textContent=`集合住宅 ${apts.length}件 / 座標済 ${done} / 未取得(住所あり) ${need}`;
 }
 async function saveAptCoord(placeId, lat, lng){
@@ -521,7 +523,7 @@ let geocoding=false;
 async function batchGeocodeApartments(forceAll){
   if(geocoding) return;
   const targets=overviewApartments().filter(r=>{
-    if(!(r.address||'').trim()) return false;
+    if(!aptAddr(r)) return false;
     if(forceAll) return true;   // 座標済も含めて全件再取得
     return !Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng));
   });
@@ -535,10 +537,10 @@ async function batchGeocodeApartments(forceAll){
     const r=targets[i];
     if($('#geocodeStat')) $('#geocodeStat').textContent=`取得中… ${i+1}/${targets.length}（成功${ok}/失敗${fail}）`;
     try{
-      const geo=await geocodeAddress(geoQueryAddress(r.address));
+      const geo=await geocodeAddress(geoQueryAddress(aptAddr(r)));
       if(geo){ await saveAptCoord(r.place_id, geo.lat, geo.lng); ok++; }
       else fail++;
-    }catch(e){ fail++; console.warn('geocode failed', r.address, e); }
+    }catch(e){ fail++; console.warn('geocode failed', aptAddr(r), e); }
     await new Promise(res=>setTimeout(res,1100));   // Nominatim レート制限（1req/秒）
   }
   geocoding=false;
