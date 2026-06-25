@@ -147,7 +147,7 @@ const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','main'];
 function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); }
-let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editMode:false, editSel:null, fullPinMap:false, _pins:[] };
+let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editingRoomId:null, editMode:false, editSel:null, fullPinMap:false, _pins:[] };
 let detailMap=null;
 
 /* ---------- 共通ヘルパ ---------- */
@@ -238,8 +238,8 @@ async function reloadData(){
 }
 $('#reloadBtn').addEventListener('click', async ()=>{ try{ await reloadData(); renderSidebar(); renderContent(); toast('再読込しました'); }catch(e){ toast('再読込失敗: '+errText(e)); } });
 $('#sideToggleBtn').addEventListener('click', toggleSidebar);
-$('#navNewBlock').addEventListener('click', ()=>{ state.view='newBlock'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); });
-$('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBlock=null; renderSidebar(); renderContent(); });
+$('#navNewBlock').addEventListener('click', ()=>{ state.view='newBlock'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); });
+$('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBlock=null; state.editingRoomId=null; renderSidebar(); renderContent(); });
 
 function toggleSidebar(){
   const closed=document.body.classList.toggle('sidebar-collapsed');
@@ -259,7 +259,7 @@ function renderSidebar(){
   const allDiv=document.createElement('div');
   allDiv.className='blockitem'+(state.view==='overview'?' sel':'');
   allDiv.innerHTML=`<div class="bn">全体カード</div><div class="bs">全${allTop.length}戸 / 訪問可${allDue} / 区域${state.blocks.length}</div>`;
-  allDiv.onclick=()=>{ state.view='overview'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
+  allDiv.onclick=()=>{ state.view='overview'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
   el.appendChild(allDiv);
   state.blocks.forEach(b=>{
     const lv=state.stats.filter(r=>r.block_id===b.id && (r.kind==='戸建て'||r.kind==='号室'));
@@ -267,7 +267,7 @@ function renderSidebar(){
     const div=document.createElement('div');
     div.className='blockitem'+(state.view==='block'&&state.curBlock===b.id?' sel':'');
     div.innerHTML=`<div class="bn">${esc(b.name||'(無名区域)')}</div><div class="bs">区域 ${esc(b.code||'')} ・ 全${lv.length}戸 / 訪問可${due}</div>`;
-    div.onclick=()=>{ state.view='block'; state.curBlock=b.id; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
+    div.onclick=()=>{ state.view='block'; state.curBlock=b.id; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
     el.appendChild(div);
   });
   $('#navUsers').classList.toggle('sel', state.view==='users');
@@ -327,7 +327,7 @@ async function createBlock(){
   if(error){ toast('区域作成失敗: '+errText(error)); return; }
   toast('区域を作成しました');
   await reloadData();
-  state.view='block'; state.curBlock=data.id; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null;
+  state.view='block'; state.curBlock=data.id; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
   renderSidebar(); renderContent();
 }
 
@@ -361,7 +361,7 @@ function renderOverviewPanel(){
       ).join('') || '<div class="empty">区域がありません。</div>')+
     `</div>`;
   $('#content').querySelectorAll('[data-open-block]').forEach(btn=>btn.addEventListener('click', ()=>{
-    state.view='block'; state.curBlock=btn.dataset.openBlock; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null;
+    state.view='block'; state.curBlock=btn.dataset.openBlock; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
     renderSidebar(); renderContent();
   }));
 }
@@ -388,6 +388,14 @@ function renderCardPanel(){
   const fMgr=(ed&&ed.has_manager)?'いる':'いない', fHours=ed?esc(ed.manager_hours||''):'';
   const statusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===fStatus?' selected':''}>${s}</option>`).join('');
   const aptOpts=APT_TYPES.map(([v,l])=>`<option value="${v}"${v===fAptType?' selected':''}>${l}</option>`).join('');
+  const editingRoom=state.editingRoomId ? state.stats.find(r=>r.place_id===state.editingRoomId) : null;
+  const roomStatus=(editingRoom&&editingRoom.status)||'訪問可能';
+  const roomStatusOpts=PLACE_STATUSES.map(s=>`<option value="${s}"${s===roomStatus?' selected':''}>${s}</option>`).join('');
+  const roomRows=isApt ? childrenOf(state.editingPlaceId).sort((a,b)=>((a.sort_order??9999)-(b.sort_order??9999)) || String(a.label||a.display_name||'').localeCompare(String(b.label||b.display_name||''),'ja')).map(r=>{
+    const si=statusInfo(r);
+    return `<div class="row"><div><div class="nm">${placeTitle(r)} <span class="badge ${si.cls}">${si.label}</span></div><div class="meta">号室</div></div>`+
+      `<div class="rowbtns"><button data-room-edit="${r.place_id}">編集</button><button class="del" data-room-del="${r.place_id}" data-label="${esc(r.display_name||r.label||'この号室')}">削除</button></div></div>`;
+  }).join('') : '';
   const rows=places.map((r,i)=>{
     const si=statusInfo(r);
     const kindLabel = r.kind==='集合住宅' ? bldgLabel(r)+`・${childrenOf(r.place_id).length}室` : '戸建て';
@@ -427,6 +435,18 @@ function renderCardPanel(){
       `<div class="actions"><button class="btn primary" id="pmSave">${editing?'更新':'追加'}</button>`+
         `${editing?'<button class="btn" id="pmCancel">やめる</button>':''}</div>`+
     `</div>`+
+    (editing&&isApt ? `<div class="panel" id="roomPanel"><h3>号室管理</h3>`+
+      `<div class="grid">`+
+        `<input id="roomLabel" placeholder="号室・部屋番号" value="${esc(editingRoom?.label||'')}">`+
+        `<input id="roomName" placeholder="名前（任意）" value="${esc(editingRoom?.display_name||'')}">`+
+        `<select id="roomStatus">${roomStatusOpts}</select>`+
+        `<input id="roomNote" placeholder="メモ（任意）" value="${esc(editingRoom?.note||'')}">`+
+      `</div>`+
+      `<div class="actions"><button class="btn primary" id="roomSave">${editingRoom?'号室を更新':'号室を追加'}</button>`+
+        `${editingRoom?'<button class="btn" id="roomCancel">やめる</button>':''}</div>`+
+      `<div class="ehead2">号室一覧（${childrenOf(state.editingPlaceId).length}件）</div>`+
+      (roomRows || '<div class="empty">号室がありません。上のフォームから追加できます。</div>')+
+    `</div>` : '')+
     `<div class="panel"><h3>カード一覧（${places.length}件）</h3>`+
       (rows || '<div class="empty">この区域にはカードがありません。上のフォームから追加できます。</div>')+
       (places.length?`<div class="actions"><button class="btn danger" id="delAll">この区域の全カード削除</button></div>`:'')+
@@ -441,7 +461,11 @@ function renderCardPanel(){
   $('#pmMgr').addEventListener('change', applyCardFormMode);
   applyCardFormMode();
   $('#pmSave').addEventListener('click', savePlaceCard);
-  const c=$('#pmCancel'); if(c) c.addEventListener('click', ()=>{ state.editingPlaceId=null; state.editingPlace=null; renderCardPanel(); });
+  const c=$('#pmCancel'); if(c) c.addEventListener('click', ()=>{ state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; renderCardPanel(); });
+  const roomSave=$('#roomSave'); if(roomSave) roomSave.addEventListener('click', saveRoomCard);
+  const roomCancel=$('#roomCancel'); if(roomCancel) roomCancel.addEventListener('click', ()=>{ state.editingRoomId=null; renderCardPanel(); });
+  $('#rightPanel').querySelectorAll('[data-room-edit]').forEach(btn=>btn.addEventListener('click', ()=>{ state.editingRoomId=btn.dataset.roomEdit; renderCardPanel(); $('#rightPanel').scrollTo({top:0, behavior:'smooth'}); }));
+  $('#rightPanel').querySelectorAll('[data-room-del]').forEach(btn=>btn.addEventListener('click', ()=>deleteRoomCard(btn.dataset.roomDel, btn.dataset.label)));
   const delAll=$('#delAll'); if(delAll) delAll.addEventListener('click', deleteAllBlockPlaces);
   $('#rightPanel').querySelectorAll('[data-mv]').forEach(btn=>btn.addEventListener('click', ()=>moveCard(btn.dataset.pid, btn.dataset.mv)));
   $('#rightPanel').querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click', ()=>startEditPlace(btn.dataset.edit)));
@@ -473,7 +497,7 @@ async function savePlaceCard(){
   btn.disabled=false;
   if(error){ toast('保存失敗（管理者権限が必要）: '+errText(error)); return; }
   toast(wasEditing?'カードを更新しました':'カードを追加しました。地図をクリックしてピンを設置してください');
-  state.editingPlaceId=null; state.editingPlace=null;
+  state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null;
   if(!wasEditing && inserted?.id){
     state.editMode=true;
     state.editSel=inserted.id;
@@ -483,8 +507,41 @@ async function savePlaceCard(){
 async function startEditPlace(placeId){
   const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind,has_manager,manager_hours').eq('id',placeId).single();
   if(error){ toast('取得失敗: '+errText(error)); return; }
-  state.editingPlaceId=placeId; state.editingPlace=data; renderCardPanel();
+  state.editingPlaceId=placeId; state.editingPlace=data; state.editingRoomId=null; renderCardPanel();
   $('#rightPanel').scrollTo({top:0, behavior:'smooth'});
+}
+async function saveRoomCard(){
+  if(!state.curBlock || !state.editingPlaceId) return;
+  const parent=state.byId[state.editingPlaceId];
+  if(!parent || parent.kind!=='集合住宅') return toast('先に集合住宅カードを選んでください');
+  const label=$('#roomLabel').value.trim();
+  const name=$('#roomName').value.trim();
+  if(!label && !name) return toast('号室か名前を入力してください');
+  const patch={
+    kind:'号室', parent_id:state.editingPlaceId, block_id:state.curBlock,
+    label:label||null, display_name:name||null,
+    status:$('#roomStatus').value||'訪問可能', note:$('#roomNote').value.trim()||null,
+    sort_order:childrenOf(state.editingPlaceId).length
+  };
+  let error;
+  if(state.editingRoomId){
+    const { parent_id, block_id, sort_order, ...updatePatch } = patch;
+    ({ error } = await sb.from('places').update(updatePatch).eq('id', state.editingRoomId));
+  } else {
+    ({ error } = await sb.from('places').insert(patch));
+  }
+  if(error){ toast('号室保存失敗: '+errText(error)); return; }
+  toast(state.editingRoomId?'号室を更新しました':'号室を追加しました');
+  state.editingRoomId=null;
+  await reloadData(); renderSidebar(); renderCardPanel();
+}
+async function deleteRoomCard(placeId, label){
+  if(!confirm(`「${label}」を削除しますか？\nこの号室の訪問記録も削除されます。`)) return;
+  const { error } = await sb.from('places').delete().eq('id', placeId);
+  if(error){ toast('号室削除失敗: '+errText(error)); return; }
+  toast('号室を削除しました');
+  if(state.editingRoomId===placeId) state.editingRoomId=null;
+  await reloadData(); renderSidebar(); renderCardPanel();
 }
 async function deletePlaceCard(placeId, label){
   if(!confirm(`「${label}」を削除しますか？\n集合住宅の場合は号室と訪問記録も削除されます。`)) return;
@@ -613,7 +670,7 @@ function renderEditPanel(id){
   $('#editPanel').querySelectorAll('.echip').forEach(c=>c.addEventListener('click',()=>{ state.editSel=c.dataset.pid; renderEditPanel(id); drawPins(id); }));
 }
 function openNewPlaceFormFromPinEditor(){
-  state.editingPlaceId=null; state.editingPlace=null; state.editSel=null;
+  state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editSel=null;
   exitPinFullscreen();
   renderCardPanel();
   setTimeout(()=>{
