@@ -444,6 +444,8 @@ function renderCardPanel(){
       `</div>`+
       `<div class="actions"><button class="btn primary" id="roomSave">${editingRoom?'号室を更新':'号室を追加'}</button>`+
         `${editingRoom?'<button class="btn" id="roomCancel">やめる</button>':''}</div>`+
+      `<div class="actions"><button class="btn" id="roomCsvBtn">CSV一括追加</button><input id="roomCsvFile" type="file" accept=".csv,text/csv" style="display:none"></div>`+
+      `<div class="hint">CSV列: 号室, 名前, ステータス, メモ（ヘッダー行あり/なし両対応）</div>`+
       `<div class="ehead2">号室一覧（${childrenOf(state.editingPlaceId).length}件）</div>`+
       (roomRows || '<div class="empty">号室がありません。上のフォームから追加できます。</div>')+
     `</div>` : '')+
@@ -464,6 +466,8 @@ function renderCardPanel(){
   const c=$('#pmCancel'); if(c) c.addEventListener('click', ()=>{ state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; renderCardPanel(); });
   const roomSave=$('#roomSave'); if(roomSave) roomSave.addEventListener('click', saveRoomCard);
   const roomCancel=$('#roomCancel'); if(roomCancel) roomCancel.addEventListener('click', ()=>{ state.editingRoomId=null; renderCardPanel(); });
+  const roomCsvBtn=$('#roomCsvBtn'); if(roomCsvBtn) roomCsvBtn.addEventListener('click', ()=>$('#roomCsvFile').click());
+  const roomCsvFile=$('#roomCsvFile'); if(roomCsvFile) roomCsvFile.addEventListener('change', importRoomCsv);
   $('#rightPanel').querySelectorAll('[data-room-edit]').forEach(btn=>btn.addEventListener('click', ()=>{ state.editingRoomId=btn.dataset.roomEdit; renderCardPanel(); $('#rightPanel').scrollTo({top:0, behavior:'smooth'}); }));
   $('#rightPanel').querySelectorAll('[data-room-del]').forEach(btn=>btn.addEventListener('click', ()=>deleteRoomCard(btn.dataset.roomDel, btn.dataset.label)));
   const delAll=$('#delAll'); if(delAll) delAll.addEventListener('click', deleteAllBlockPlaces);
@@ -533,6 +537,59 @@ async function saveRoomCard(){
   if(error){ toast('号室保存失敗: '+errText(error)); return; }
   toast(state.editingRoomId?'号室を更新しました':'号室を追加しました');
   state.editingRoomId=null;
+  await reloadData(); renderSidebar(); renderCardPanel();
+}
+function parseCsvRows(text){
+  const rows=[]; let row=[], cell='', q=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i], next=text[i+1];
+    if(q){
+      if(ch==='"' && next==='"'){ cell+='"'; i++; }
+      else if(ch==='"'){ q=false; }
+      else cell+=ch;
+    } else {
+      if(ch==='"') q=true;
+      else if(ch===','){ row.push(cell.trim()); cell=''; }
+      else if(ch==='\n'){ row.push(cell.trim()); rows.push(row); row=[]; cell=''; }
+      else if(ch!=='\r') cell+=ch;
+    }
+  }
+  row.push(cell.trim()); rows.push(row);
+  return rows.filter(r=>r.some(v=>v));
+}
+function decodeCsvBuffer(buffer){
+  try{ return new TextDecoder('utf-8',{fatal:true}).decode(buffer); }
+  catch(_){ return new TextDecoder('shift_jis').decode(buffer); }
+}
+function csvHasRoomHeader(row){
+  const head=row.map(v=>String(v||'').trim().toLowerCase());
+  return ['号室','部屋','部屋番号','room','room_number'].some(k=>head[0]===k || head[0].includes(k));
+}
+async function importRoomCsv(e){
+  const file=e.target.files && e.target.files[0]; e.target.value='';
+  if(!file || !state.curBlock || !state.editingPlaceId) return;
+  const parent=state.byId[state.editingPlaceId];
+  if(!parent || parent.kind!=='集合住宅') return toast('先に集合住宅カードを選んでください');
+  let rows;
+  try{
+    rows=parseCsvRows(decodeCsvBuffer(await file.arrayBuffer()));
+  }catch(err){
+    toast('CSV読込失敗: '+errText(err)); return;
+  }
+  if(rows.length && csvHasRoomHeader(rows[0])) rows=rows.slice(1);
+  const baseOrder=childrenOf(state.editingPlaceId).length;
+  const payload=rows.map((r,i)=>({
+    kind:'号室', parent_id:state.editingPlaceId, block_id:state.curBlock,
+    label:(r[0]||'').trim()||null,
+    display_name:(r[1]||'').trim()||null,
+    status:(r[2]||'訪問可能').trim()||'訪問可能',
+    note:(r[3]||'').trim()||null,
+    sort_order:baseOrder+i
+  })).filter(r=>r.label || r.display_name);
+  if(!payload.length){ toast('追加できる号室がありません'); return; }
+  const { error } = await sb.from('places').insert(payload);
+  if(error){ toast('CSV一括追加失敗: '+errText(error)); return; }
+  toast(`号室を${payload.length}件追加しました`);
   await reloadData(); renderSidebar(); renderCardPanel();
 }
 async function deleteRoomCard(placeId, label){
