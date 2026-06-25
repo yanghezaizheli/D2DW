@@ -18,9 +18,14 @@
   .mini{background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer}
   .screen{display:none}.screen.active{display:block}
   /* レイアウト: 左サイドバー + メイン */
-  .layout{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 49px)}
+  .layout{display:grid;grid-template-columns:300px minmax(520px,1fr) 380px;height:calc(100vh - 49px)}
+  body.sidebar-collapsed .layout{grid-template-columns:0 minmax(520px,1fr) 380px}
   .sidebar{border-right:1px solid var(--line);background:#fff;overflow-y:auto;padding:12px}
-  .content{overflow-y:auto;padding:18px 22px;max-width:900px}
+  body.sidebar-collapsed .sidebar{padding:0;border-right:none;overflow:hidden}
+  .content{overflow-y:auto;padding:18px 22px}
+  .rightpanel{border-left:1px solid var(--line);background:#fff;overflow-y:auto;padding:14px}
+  .rightpanel .panel{padding:14px;margin-bottom:14px}
+  .rightpanel .grid{grid-template-columns:1fr}
   .side-h{font-size:12px;color:var(--sub);font-weight:700;margin:10px 4px 6px}
   .blockitem{padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:#fff}
   .blockitem:hover{background:#f0f6f2}
@@ -111,6 +116,7 @@
   <section id="s-main" class="screen">
     <div class="bar">
       <h1>D2DW 編集ツール <span class="sub" id="meName"></span></h1>
+      <button class="mini" id="sideToggleBtn">左パネルを閉じる</button>
       <button class="mini" id="reloadBtn">↻ 再読込</button>
       <button class="mini" id="signoutBtn">ログアウト</button>
     </div>
@@ -123,6 +129,7 @@
         <button class="navbtn" id="navUsers">ユーザー管理</button>
       </aside>
       <main class="content" id="content"></main>
+      <aside class="rightpanel" id="rightPanel"></aside>
     </div>
   </section>
 </div>
@@ -230,8 +237,19 @@ async function reloadData(){
   state.byId=Object.fromEntries(state.stats.map(r=>[r.place_id,r]));
 }
 $('#reloadBtn').addEventListener('click', async ()=>{ try{ await reloadData(); renderSidebar(); renderContent(); toast('再読込しました'); }catch(e){ toast('再読込失敗: '+errText(e)); } });
+$('#sideToggleBtn').addEventListener('click', toggleSidebar);
 $('#navNewBlock').addEventListener('click', ()=>{ state.view='newBlock'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); });
 $('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBlock=null; renderSidebar(); renderContent(); });
+
+function toggleSidebar(){
+  const closed=document.body.classList.toggle('sidebar-collapsed');
+  $('#sideToggleBtn').textContent=closed?'左パネルを開く':'左パネルを閉じる';
+  resizeDetailMap();
+}
+function clearRightPanel(){
+  const rp=$('#rightPanel');
+  if(rp) rp.innerHTML='<div class="empty">区域を選ぶと、カード追加とカード一覧がここに表示されます。</div>';
+}
 
 /* ---------- サイドバー（区域一覧） ---------- */
 function renderSidebar(){
@@ -258,10 +276,11 @@ function renderSidebar(){
 
 /* ---------- メイン表示の切替 ---------- */
 function renderContent(){
-  if(state.view==='overview'){ renderOverviewPanel(); return; }
-  if(state.view==='newBlock'){ renderNewBlockPanel(); return; }
-  if(state.view==='users'){ renderUserPanel(); return; }
+  if(state.view==='overview'){ clearRightPanel(); renderOverviewPanel(); return; }
+  if(state.view==='newBlock'){ clearRightPanel(); renderNewBlockPanel(); return; }
+  if(state.view==='users'){ clearRightPanel(); renderUserPanel(); return; }
   if(state.curBlock){ renderCardPanel(); return; }
+  clearRightPanel();
   $('#content').innerHTML='<h2 class="title">区域を選んでください</h2><p class="muted">左の区域一覧から選ぶと、その区域のカードを編集できます。</p>';
 }
 
@@ -390,7 +409,8 @@ function renderCardPanel(){
       `</div>`+
       `<div id="detailMap"></div>`+
       `<div id="editPanel" style="display:${state.editMode?'block':'none'}"></div>`+
-    `</div>`+
+    `</div>`;
+  $('#rightPanel').innerHTML=
     `<div class="panel" id="cardFormPanel"><h3>${editing?'カードを編集':'単体カードを追加'}</h3>`+
       `<div class="grid">`+
         `<label class="fld wide">種別<select id="pmKind">`+
@@ -423,9 +443,9 @@ function renderCardPanel(){
   $('#pmSave').addEventListener('click', savePlaceCard);
   const c=$('#pmCancel'); if(c) c.addEventListener('click', ()=>{ state.editingPlaceId=null; state.editingPlace=null; renderCardPanel(); });
   const delAll=$('#delAll'); if(delAll) delAll.addEventListener('click', deleteAllBlockPlaces);
-  $('#content').querySelectorAll('[data-mv]').forEach(btn=>btn.addEventListener('click', ()=>moveCard(btn.dataset.pid, btn.dataset.mv)));
-  $('#content').querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click', ()=>startEditPlace(btn.dataset.edit)));
-  $('#content').querySelectorAll('[data-del]').forEach(btn=>btn.addEventListener('click', ()=>deletePlaceCard(btn.dataset.del, btn.dataset.label)));
+  $('#rightPanel').querySelectorAll('[data-mv]').forEach(btn=>btn.addEventListener('click', ()=>moveCard(btn.dataset.pid, btn.dataset.mv)));
+  $('#rightPanel').querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click', ()=>startEditPlace(btn.dataset.edit)));
+  $('#rightPanel').querySelectorAll('[data-del]').forEach(btn=>btn.addEventListener('click', ()=>deletePlaceCard(btn.dataset.del, btn.dataset.label)));
 }
 async function savePlaceCard(){
   if(!state.curBlock) return;
@@ -455,7 +475,7 @@ async function startEditPlace(placeId){
   const { data, error } = await sb.from('places').select('display_name,label,status,note,type,kind,has_manager,manager_hours').eq('id',placeId).single();
   if(error){ toast('取得失敗: '+errText(error)); return; }
   state.editingPlaceId=placeId; state.editingPlace=data; renderCardPanel();
-  $('#content').scrollTo({top:0, behavior:'smooth'});
+  $('#rightPanel').scrollTo({top:0, behavior:'smooth'});
 }
 async function deletePlaceCard(placeId, label){
   if(!confirm(`「${label}」を削除しますか？\n集合住宅の場合は号室と訪問記録も削除されます。`)) return;
