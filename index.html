@@ -197,8 +197,6 @@
     <div class="mapwrap"><div id="broadMap" class="map" style="height:260px"></div><button class="mapfull" data-map-full="broadMap" aria-label="地図を全画面表示">⛶</button></div>
     <div class="map-resizer" id="broadMapResizer" aria-label="下にスワイプで地図を広げる"></div>
     <div class="fab" id="locateBtn">📍 現在地</div>
-    <div class="legend"><span><i style="background:var(--green)"></i>訪問可能あり</span><span><i style="background:var(--blue)"></i>対象なし</span><span id="rtState">●同期待機</span></div>
-    <div class="sectiontitle">区域一覧</div>
     <div class="bfilter">
       <input id="bfSearch" class="bf-search" type="search" placeholder="🔍 区域名・番号・エリアで検索" autocomplete="off">
       <div class="bf-row">
@@ -942,11 +940,11 @@ function subscribeBlock(blockId){
     .on('postgres_changes',
       { event:'*', schema:'public', table:'visits', filter:'block_id=eq.'+blockId },
       payload=>{ queuePlaceUpdate(payload.new?.place_id || payload.old?.place_id); })
-    .subscribe(status=>{ $('#rtState').textContent = status==='SUBSCRIBED' ? '●同期中' : '●'+status; });
+    .subscribe(status=>{ const el=$('#rtState'); if(el) el.textContent = status==='SUBSCRIBED' ? '●同期中' : '●'+status; });
 }
 function unsubscribeBlock(){
   if(rtChannel){ sb.removeChannel(rtChannel); rtChannel=null; }
-  $('#rtState').textContent='●待機';
+  const el=$('#rtState'); if(el) el.textContent='●待機';
 }
 function rerender(){
   if(cur==='broad'){ renderBroad(); }
