@@ -80,7 +80,7 @@
   .mapfull{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
   .mapfull-close{display:none;position:fixed;right:16px;top:16px;z-index:3010;background:#fff;border:1px solid var(--line);
     border-radius:10px;padding:10px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.22);cursor:pointer;color:var(--text)}
-  #detailMap.fullscreen-map{position:fixed!important;inset:0;width:100vw!important;height:100dvh!important;z-index:3000;border-radius:0}
+  #detailMap.fullscreen-map,#overviewMap.fullscreen-map{position:fixed!important;inset:0;width:100vw!important;height:100dvh!important;z-index:3000;border-radius:0}
   body.admin-map-is-fullscreen{overflow:hidden}
   body.admin-map-is-fullscreen .mapfull-close{display:block}
   body.admin-map-is-fullscreen #editPanel{position:fixed;left:18px;right:18px;bottom:18px;z-index:3010;max-height:34vh;overflow:auto;
@@ -149,7 +149,7 @@ const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','main'];
 function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); }
 let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editingRoomId:null, editMode:false, editSel:null, fullPinMap:false, _pins:[] };
-let detailMap=null;
+let detailMap=null, overviewMap=null;
 
 /* ---------- 共通ヘルパ ---------- */
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -197,8 +197,8 @@ $('#googleBtn').addEventListener('click', async ()=>{
   if(error) $('#loginErr').textContent='失敗: '+errText(error);
 });
 $('#signoutBtn').addEventListener('click', ()=> sb.auth.signOut());
-$('#exitMapFullBtn').addEventListener('click', exitPinFullscreen);
-document.addEventListener('keydown', e=>{ if(e.key==='Escape') exitPinFullscreen(); });
+$('#exitMapFullBtn').addEventListener('click', ()=>{ exitPinFullscreen(); exitOverviewFullscreen(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ exitPinFullscreen(); exitOverviewFullscreen(); } });
 
 async function onLogin(user){
   state.user=user; $('#meName').textContent=user.email||''; go('loading');
@@ -370,7 +370,7 @@ function renderOverviewPanel(){
       `<div class="row"><div><div class="nm">訪問拒否</div><div class="meta">訪問対象外として扱うカード</div></div><strong>${rejectTotal}</strong></div>`+
       `<div class="row"><div><div class="nm">集合住宅</div><div class="meta">親カード件数</div></div><strong>${aptTotal}</strong></div>`+
     `</div>`+
-    `<div class="panel"><h3>全体マップ</h3>`+
+    `<div class="panel"><h3>全体マップ <button class="mapfull" id="overviewFullBtn" style="font-size:12px;padding:6px 12px;float:right">全画面</button></h3>`+
       `<div id="overviewMap"></div>`+
       `<div class="hint" style="margin-top:10px">代表座標が設定済みの区域を表示します。ピンをクリックすると区域編集へ移動します。</div>`+
     `</div>`+
@@ -394,22 +394,39 @@ function openBlockFromOverview(blockId){
 function initOverviewMap(){
   const el=$('#overviewMap');
   if(!el) return;
+  if(overviewMap){ overviewMap.remove(); overviewMap=null; }
   const mapped=state.blocks.filter(b=>Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)));
   if(!mapped.length){
     el.innerHTML='<div class="empty" style="padding:16px">代表座標が設定された区域がありません。</div>';
     return;
   }
-  const map=L.map('overviewMap',{zoomControl:true,attributionControl:false});
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  overviewMap=L.map('overviewMap',{zoomControl:true,attributionControl:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(overviewMap);
   const bounds=[];
   mapped.forEach(b=>{
     const lat=Number(b.lat), lng=Number(b.lng);
     bounds.push([lat,lng]);
-    const marker=L.marker([lat,lng]).addTo(map).bindTooltip(`${b.name||'(無名区域)'}`,{direction:'top'});
+    const marker=L.marker([lat,lng]).addTo(overviewMap).bindTooltip(`${b.name||'(無名区域)'}`,{direction:'top'});
     marker.on('click',()=>openBlockFromOverview(b.id));
   });
-  map.fitBounds(bounds,{padding:[28,28],maxZoom:16});
-  setTimeout(()=>map.invalidateSize(),80);
+  overviewMap.fitBounds(bounds,{padding:[28,28],maxZoom:16});
+  setTimeout(()=>overviewMap&&overviewMap.invalidateSize(),80);
+  const fullBtn=$('#overviewFullBtn');
+  if(fullBtn) fullBtn.addEventListener('click',enterOverviewFullscreen);
+}
+function enterOverviewFullscreen(){
+  if(!$('#overviewMap')) return;
+  state.fullPinMap=false; exitPinFullscreen();
+  document.body.classList.add('admin-map-is-fullscreen');
+  $('#overviewMap').classList.add('fullscreen-map');
+  if(overviewMap) setTimeout(()=>overviewMap.invalidateSize(),80);
+}
+function exitOverviewFullscreen(){
+  const el=$('#overviewMap');
+  if(!el) return;
+  document.body.classList.remove('admin-map-is-fullscreen');
+  el.classList.remove('fullscreen-map');
+  if(overviewMap) setTimeout(()=>overviewMap.invalidateSize(),80);
 }
 
 /* ---------- カード管理 ---------- */
