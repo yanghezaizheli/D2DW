@@ -1,4 +1,10 @@
 {
+  "redirects": [
+    { "source": "/01nagazumi2-1detail.png", "destination": "/assets/images/01nagazumi2-1detail.png", "permanent": true },
+    { "source": "/01nagazumi2-2detail.png", "destination": "/assets/images/01nagazumi2-2detail.png", "permanent": true },
+    { "source": "/01nagazumi2-3detail.png", "destination": "/assets/images/01nagazumi2-3detail.png", "permanent": true },
+    { "source": "/01nagazumi2-9detail.png", "destination": "/assets/images/01nagazumi2-9detail.png", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/sw.js",
