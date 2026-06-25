@@ -56,6 +56,24 @@
     color:var(--text);font-size:11px;font-weight:700;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,.16)}
   .legend{font-size:11px;color:var(--sub);padding:8px 16px;display:flex;gap:14px;flex-wrap:wrap}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+  /* 区域一覧の絞り込み */
+  .bfilter{padding:0 12px 4px}
+  .bf-search{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;font-family:inherit;outline:none}
+  .bf-search:focus{border-color:var(--brand)}
+  .bf-row{display:flex;gap:8px;margin-top:8px}
+  .bf-toggle{flex:1;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer}
+  .bf-toggle.open{border-color:var(--brand);color:var(--brand)}
+  .bf-badge{background:var(--brand);color:#fff;border-radius:9px;font-size:10px;padding:1px 6px;margin-left:2px;display:none}
+  .bf-badge.on{display:inline-block}
+  .bf-reset{flex:0 0 auto;border:none;background:#eef2ef;color:var(--brand);border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer}
+  .bf-panel{display:none;flex-wrap:wrap;gap:8px;padding:10px 2px 2px}
+  .bf-panel.open{display:flex}
+  .bf-chip{border:1.5px solid var(--line);background:#fff;color:var(--sub);border-radius:18px;padding:7px 14px;font-size:13px;font-family:inherit;cursor:pointer;user-select:none}
+  .bf-chip.sel{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .bf-sort{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .bf-sortbtn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 12px;font-size:12px;color:var(--sub);font-family:inherit;cursor:pointer}
+  .bf-sortbtn.active{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+  .bf-count{font-size:11px;color:var(--sub);padding:8px 2px 0}
   .fab{position:absolute;right:16px;margin-top:-52px;background:#fff;border:1px solid var(--line);border-radius:999px;
     padding:8px 12px;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.12);cursor:pointer;z-index:600}
   .rec-head{padding:16px;background:var(--card);border-bottom:1px solid var(--line)}
@@ -134,6 +152,22 @@
     <div class="fab" id="locateBtn">📍 現在地</div>
     <div class="legend"><span><i style="background:var(--green)"></i>訪問可能あり</span><span><i style="background:var(--blue)"></i>対象なし</span><span id="rtState">●同期待機</span></div>
     <div class="sectiontitle">区域一覧</div>
+    <div class="bfilter">
+      <input id="bfSearch" class="bf-search" type="search" placeholder="🔍 区域名・番号・エリアで検索" autocomplete="off">
+      <div class="bf-row">
+        <button class="bf-toggle" id="bfAreaBtn" type="button">エリア<span class="bf-badge" id="bfAreaBadge"></span> ▾</button>
+        <button class="bf-toggle" id="bfTypeBtn" type="button">種別<span class="bf-badge" id="bfTypeBadge"></span> ▾</button>
+        <button class="bf-reset" id="bfReset" type="button">リセット</button>
+      </div>
+      <div class="bf-panel" id="bfAreaPanel"></div>
+      <div class="bf-panel" id="bfTypePanel"></div>
+      <div class="bf-sort">
+        <button class="bf-sortbtn active" data-sort="area" type="button">エリア順</button>
+        <button class="bf-sortbtn" data-sort="due" type="button">訪問可能数 ▼</button>
+        <button class="bf-sortbtn" data-sort="count" type="button">戸数 ▼</button>
+      </div>
+      <div class="bf-count" id="bfCount"></div>
+    </div>
     <div id="blockList" class="list"></div>
   </section>
 
@@ -383,9 +417,60 @@ function fmtDate(s){ if(!s) return '—'; const d=new Date(s); return `${d.getFu
 function fmtDateTime(s){ if(!s) return '—'; const d=new Date(s); return `${d.getMonth()+1}/${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`; }
 
 /* ---------- 画面1: 広域 ---------- */
-function renderBroad(){
+/* エリア番号順（admin.html の AREA_ORDER と同じ）。区域の area 名で並べ替え。 */
+const AREA_ORDER=['長住','長丘','皿山','柳河内','寺塚','大池','多賀','野間','玉川町','大楠','高宮','市崎','平和'];
+function areaRank(name){ const i=AREA_ORDER.indexOf(name); return i<0?999:i; }
+const BLK_TYPE_LABEL={'LDR':'戸建てメイン','AL-M':'オートロック','EV-M':'エレベーター','ST-M':'階段'};
+function blockBaseType(b){
+  const t=String(b.type||'').toUpperCase();
+  if(t.includes('AL-M')) return 'AL-M';
+  if(t.includes('EV-M')) return 'EV-M';
+  if(t.includes('ST-M')) return 'ST-M';
+  return 'LDR';
+}
+// 絞り込み状態
+const bf={ q:'', areas:new Set(), types:new Set(), sort:'area', built:false };
+function filteredBlocks(){
+  const q=bf.q.trim().toLowerCase();
+  let arr=state.blocks.filter(b=>{
+    if(q && !`${b.name||''} ${b.code||''} ${b.area||''}`.toLowerCase().includes(q)) return false;
+    if(bf.areas.size && !bf.areas.has(b.area||'(未分類)')) return false;
+    if(bf.types.size && !bf.types.has(blockBaseType(b))) return false;
+    return true;
+  });
+  if(bf.sort==='due') arr.sort((a,c)=> leaves(c.id).filter(r=>r.is_due).length - leaves(a.id).filter(r=>r.is_due).length);
+  else if(bf.sort==='count') arr.sort((a,c)=> leaves(c.id).length - leaves(a.id).length);
+  else arr.sort((a,c)=> areaRank(a.area)-areaRank(c.area) || (a.name||'').localeCompare(c.name||'','ja',{numeric:true}));
+  return arr;
+}
+function buildBfPanels(){
+  // エリア（存在する区域から、エリア番号順に）
+  const areas=[...new Set(state.blocks.map(b=>b.area||'(未分類)'))].sort((a,c)=>areaRank(a)-areaRank(c) || a.localeCompare(c,'ja'));
+  const ap=$('#bfAreaPanel'); ap.innerHTML='';
+  areas.forEach(a=>{
+    const c=document.createElement('button'); c.type='button'; c.className='bf-chip'+(bf.areas.has(a)?' sel':''); c.textContent=a;
+    c.onclick=()=>{ bf.areas.has(a)?bf.areas.delete(a):bf.areas.add(a); c.classList.toggle('sel'); updateBfBadges(); renderBlockList(); };
+    ap.appendChild(c);
+  });
+  // 種別（区域に実在するベース種別のみ）
+  const types=[...new Set(state.blocks.map(blockBaseType))].sort((a,c)=>['LDR','AL-M','EV-M','ST-M'].indexOf(a)-['LDR','AL-M','EV-M','ST-M'].indexOf(c));
+  const tp=$('#bfTypePanel'); tp.innerHTML='';
+  types.forEach(t=>{
+    const c=document.createElement('button'); c.type='button'; c.className='bf-chip'+(bf.types.has(t)?' sel':''); c.textContent=BLK_TYPE_LABEL[t]||t;
+    c.onclick=()=>{ bf.types.has(t)?bf.types.delete(t):bf.types.add(t); c.classList.toggle('sel'); updateBfBadges(); renderBlockList(); };
+    tp.appendChild(c);
+  });
+  bf.built=true;
+}
+function updateBfBadges(){
+  const ab=$('#bfAreaBadge'), tb=$('#bfTypeBadge');
+  ab.textContent=bf.areas.size||''; ab.classList.toggle('on',bf.areas.size>0);
+  tb.textContent=bf.types.size||''; tb.classList.toggle('on',bf.types.size>0);
+}
+function renderBlockList(){
   const el=$('#blockList'); el.innerHTML='';
-  state.blocks.forEach(b=>{
+  const arr=filteredBlocks();
+  arr.forEach(b=>{
     const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
     const cls=due>0?'b-green':'b-blue';
     const div=document.createElement('div'); div.className='card blockcard'; div.onclick=()=>openBlock(b.id);
@@ -393,6 +478,12 @@ function renderBroad(){
       <div class="meta">区域番号 ${esc(b.code||'')} ・ 全 <b>${lv.length}</b> 戸 / 今訪問可 <b>${due}</b></div></div><div class="chev">›</div>`;
     el.appendChild(div);
   });
+  $('#bfCount').textContent=`${arr.length} 件表示中（全 ${state.blocks.length} 区域）`;
+}
+function renderBroad(){
+  buildBfPanels();        // データ最新化に合わせてチップを作り直す（選択状態は bf から復元）
+  updateBfBadges();
+  renderBlockList();
 }
 function initBroad(){
   if(broadMap) return;
@@ -408,6 +499,22 @@ function initBroad(){
     L.marker([b.lat,b.lng],{icon}).addTo(broadMap).on('click',()=>openBlock(b.id)).bindTooltip(b.name,{direction:'top',offset:[0,-24]});
   });
 }
+// 絞り込みUIのイベント
+$('#bfSearch').addEventListener('input', e=>{ bf.q=e.target.value; renderBlockList(); });
+$('#bfAreaBtn').addEventListener('click', ()=>{ const p=$('#bfAreaPanel'); const o=p.classList.toggle('open'); $('#bfAreaBtn').classList.toggle('open',o); $('#bfTypePanel').classList.remove('open'); $('#bfTypeBtn').classList.remove('open'); });
+$('#bfTypeBtn').addEventListener('click', ()=>{ const p=$('#bfTypePanel'); const o=p.classList.toggle('open'); $('#bfTypeBtn').classList.toggle('open',o); $('#bfAreaPanel').classList.remove('open'); $('#bfAreaBtn').classList.remove('open'); });
+$('#bfReset').addEventListener('click', ()=>{
+  bf.q=''; bf.areas.clear(); bf.types.clear(); bf.sort='area';
+  $('#bfSearch').value='';
+  document.querySelectorAll('.bf-chip').forEach(c=>c.classList.remove('sel'));
+  document.querySelectorAll('.bf-sortbtn').forEach(b=>b.classList.toggle('active',b.dataset.sort==='area'));
+  updateBfBadges(); renderBlockList();
+});
+document.querySelectorAll('.bf-sortbtn').forEach(b=> b.addEventListener('click', ()=>{
+  bf.sort=b.dataset.sort;
+  document.querySelectorAll('.bf-sortbtn').forEach(x=>x.classList.toggle('active',x===b));
+  renderBlockList();
+}));
 $('#locateBtn').addEventListener('click', ()=>{
   if(!navigator.geolocation||!broadMap) return toast('現在地を取得できません');
   navigator.geolocation.getCurrentPosition(pos=>{
