@@ -71,6 +71,14 @@
   .userrow .uacts .del{color:var(--red)}
   /* 詳細地図・ピン編集 */
   #detailMap{width:100%;height:520px;background:#dde3df;border-radius:10px}
+  .mapfull{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
+  .mapfull-close{display:none;position:fixed;right:16px;top:16px;z-index:3010;background:#fff;border:1px solid var(--line);
+    border-radius:10px;padding:10px 14px;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.22);cursor:pointer;color:var(--text)}
+  #detailMap.fullscreen-map{position:fixed!important;inset:0;width:100vw!important;height:100dvh!important;z-index:3000;border-radius:0}
+  body.admin-map-is-fullscreen{overflow:hidden}
+  body.admin-map-is-fullscreen .mapfull-close{display:block}
+  body.admin-map-is-fullscreen #editPanel{position:fixed;left:18px;right:18px;bottom:18px;z-index:3010;max-height:34vh;overflow:auto;
+    background:rgba(255,255,255,.96);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 8px 26px rgba(0,0,0,.22)}
   .pin{border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
   .pin span{transform:rotate(45deg);color:#fff;font-weight:700}
   .ehead{font-size:13px;font-weight:700;color:var(--brand);margin-top:10px}
@@ -118,6 +126,7 @@
   </section>
 </div>
 <div class="toast" id="toast"></div>
+<button class="mapfull-close" id="exitMapFullBtn">地図を閉じる</button>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script type="module">
@@ -130,7 +139,7 @@ const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','main'];
 function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); }
-let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editMode:false, editSel:null, _pins:[] };
+let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editMode:false, editSel:null, fullPinMap:false, _pins:[] };
 let detailMap=null;
 
 /* ---------- 共通ヘルパ ---------- */
@@ -179,6 +188,8 @@ $('#googleBtn').addEventListener('click', async ()=>{
   if(error) $('#loginErr').textContent='失敗: '+errText(error);
 });
 $('#signoutBtn').addEventListener('click', ()=> sb.auth.signOut());
+$('#exitMapFullBtn').addEventListener('click', exitPinFullscreen);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') exitPinFullscreen(); });
 
 async function onLogin(user){
   state.user=user; $('#meName').textContent=user.email||''; go('loading');
@@ -254,6 +265,7 @@ function applyCardFormMode(){
   if($('#pmMgrHours')) $('#pmMgrHours').style.display=mgrIn?'':'none';
 }
 function renderCardPanel(){
+  exitPinFullscreen();
   const b=state.blocks.find(x=>x.id===state.curBlock);
   const places=blockTopPlaces(state.curBlock);
   const ed=state.editingPlace, editing=!!state.editingPlaceId;
@@ -278,6 +290,7 @@ function renderCardPanel(){
     `<div class="panel"><h3>詳細地図（ピン配置）</h3>`+
       `<div class="actions" style="margin-top:0;margin-bottom:10px">`+
         `<button class="btn" id="pinEditBtn">${state.editMode?'完了':'📍 ピン編集'}</button>`+
+        `<button class="mapfull" id="pinFullBtn">全画面でピン編集</button>`+
         `<button class="btn" id="mapSwapBtn">🗺 地図PNGを差替</button>`+
         `<input id="mapFile" type="file" accept="image/png" style="display:none">`+
       `</div>`+
@@ -305,6 +318,7 @@ function renderCardPanel(){
       (places.length?`<div class="actions"><button class="btn danger" id="delAll">この区域の全カード削除</button></div>`:'')+
     `</div>`;
   $('#pinEditBtn').addEventListener('click', toggleEdit);
+  $('#pinFullBtn').addEventListener('click', enterPinFullscreen);
   $('#mapSwapBtn').addEventListener('click', ()=>$('#mapFile').click());
   $('#mapFile').addEventListener('change', handleDetailMapFile);
   initDetailMap(state.curBlock);
@@ -413,6 +427,25 @@ function buildDetailMap(id, url, W, H){
     });
   }
   detailMap.invalidateSize(); setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },120);
+}
+function resizeDetailMap(){
+  if(detailMap) setTimeout(()=>detailMap.invalidateSize(), 80);
+}
+function enterPinFullscreen(){
+  if(!state.curBlock || !$('#detailMap')) return;
+  if(!state.editMode) toggleEdit();
+  state.fullPinMap=true;
+  document.body.classList.add('admin-map-is-fullscreen');
+  $('#detailMap').classList.add('fullscreen-map');
+  resizeDetailMap();
+}
+function exitPinFullscreen(){
+  if(!state.fullPinMap) return;
+  state.fullPinMap=false;
+  document.body.classList.remove('admin-map-is-fullscreen');
+  const mapEl=$('#detailMap');
+  if(mapEl) mapEl.classList.remove('fullscreen-map');
+  resizeDetailMap();
 }
 function drawPins(id){
   if(state._pins) state._pins.forEach(m=>m.remove());
