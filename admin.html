@@ -462,13 +462,22 @@ async function savePlaceCard(){
       status:$('#pmStatus').value||'訪問可能', note:$('#pmNote').value.trim()||null, has_manager:false, manager_hours:null };
   }
   const btn=$('#pmSave'); btn.disabled=true;
-  let error;
-  if(state.editingPlaceId){ ({error}=await sb.from('places').update(patch).eq('id', state.editingPlaceId)); }
-  else { patch.block_id=state.curBlock; patch.sort_order=blockTopPlaces(state.curBlock).length; ({error}=await sb.from('places').insert(patch)); }
+  const wasEditing=!!state.editingPlaceId;
+  let error, inserted;
+  if(wasEditing){
+    ({error}=await sb.from('places').update(patch).eq('id', state.editingPlaceId));
+  } else {
+    patch.block_id=state.curBlock; patch.sort_order=blockTopPlaces(state.curBlock).length;
+    ({data:inserted, error}=await sb.from('places').insert(patch).select('id').single());
+  }
   btn.disabled=false;
   if(error){ toast('保存失敗（管理者権限が必要）: '+errText(error)); return; }
-  toast(state.editingPlaceId?'カードを更新しました':'カードを追加しました');
+  toast(wasEditing?'カードを更新しました':'カードを追加しました。地図をクリックしてピンを設置してください');
   state.editingPlaceId=null; state.editingPlace=null;
+  if(!wasEditing && inserted?.id){
+    state.editMode=true;
+    state.editSel=inserted.id;
+  }
   await reloadData(); renderSidebar(); renderCardPanel();
 }
 async function startEditPlace(placeId){
