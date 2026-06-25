@@ -52,6 +52,8 @@
   .pin{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #fff;
     box-shadow:0 1px 3px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
   .pin span{transform:rotate(45deg);color:#fff;font-size:11px;font-weight:700}
+  .pin-label{background:rgba(255,255,255,.92);border:1px solid rgba(31,36,33,.18);border-radius:6px;
+    color:var(--text);font-size:11px;font-weight:700;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,.16)}
   .legend{font-size:11px;color:var(--sub);padding:8px 16px;display:flex;gap:14px;flex-wrap:wrap}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
   .fab{position:absolute;right:16px;margin-top:-52px;background:#fff;border:1px solid var(--line);border-radius:999px;
@@ -477,6 +479,7 @@ function buildDetailMap(id, url, W, H){
   detailMap=L.map('detailMap',{crs:L.CRS.Simple,minZoom:-3,maxZoom:3,zoomControl:false,attributionControl:false});
   const bounds=[[0,0],[H,W]]; L.imageOverlay(url,bounds).addTo(detailMap); detailMap.fitBounds(bounds);
   drawPins(id);
+  detailMap.on('zoomend', updatePinLabels);
   detailMap.invalidateSize(); setTimeout(()=>{ if(detailMap) detailMap.invalidateSize(); },120);
 }
 function pinColor(r,apt){ const si=apt?{cls:''}:statusInfo(r);
@@ -488,10 +491,19 @@ function drawPins(id){
     const apt=r.kind==='集合住宅', color=pinColor(r,apt);
     const icon=L.divIcon({className:'',iconSize:[22,22],iconAnchor:[11,22],
       html:`<div class="pin" style="width:22px;height:22px;background:${color};"><span style="font-size:9px">${apt?'集':''}</span></div>`});
-    const mk=L.marker([r.map_y,r.map_x],{icon}).addTo(detailMap).bindTooltip(placeTitle(r),{direction:'top'});
+    const mk=L.marker([r.map_y,r.map_x],{icon}).addTo(detailMap)
+      .bindTooltip(placeTitle(r),{direction:'right',offset:[10,-18],className:'pin-label'});
     mk.on('click', ()=> apt?openApt(r.place_id):openRecord(r.place_id,'block'));
     state._pins.push(mk);
   });
+  updatePinLabels();
+}
+function shouldShowPinLabels(){
+  return detailMap && detailMap.getZoom() >= 0;
+}
+function updatePinLabels(){
+  if(!detailMap || !state._pins) return;
+  state._pins.forEach(m=> shouldShowPinLabels() ? m.openTooltip() : m.closeTooltip());
 }
 function blockTopPlaces(id){
   return state.stats.filter(r=>r.block_id===id && (r.kind==='戸建て'||r.kind==='集合住宅'))
