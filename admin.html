@@ -424,6 +424,7 @@ function renderOverviewPanel(){
       `<div class="hint" style="margin-top:10px">青=区域代表座標 / 緑=集合住宅。集合住宅ピンはドラッグで位置を補正・保存できます。クリックで区域編集へ移動します。</div>`+
       `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">`+
         `<button id="geocodeBtn" class="mapfull" style="font-size:13px;padding:8px 14px">住所から座標取得</button>`+
+        `<button id="geocodeAllBtn" class="mapfull" style="font-size:13px;padding:8px 14px">全件再取得</button>`+
         `<span id="geocodeStat" class="hint"></span>`+
       `</div>`+
     `</div>`+
@@ -484,7 +485,7 @@ function initOverviewMap(){
   wireGeocodeBtn(); wireOverviewFull();
 }
 function wireOverviewFull(){ const fullBtn=$('#overviewFullBtn'); if(fullBtn) fullBtn.onclick=enterOverviewFullscreen; }
-function wireGeocodeBtn(){ const b=$('#geocodeBtn'); if(b) b.onclick=batchGeocodeApartments; updateGeocodeStat(); }
+function wireGeocodeBtn(){ const b=$('#geocodeBtn'); if(b) b.onclick=()=>batchGeocodeApartments(false); const ab=$('#geocodeAllBtn'); if(ab) ab.onclick=()=>batchGeocodeApartments(true); updateGeocodeStat(); }
 function updateGeocodeStat(){
   const el=$('#geocodeStat'); if(!el) return;
   const apts=overviewApartments();
@@ -517,13 +518,18 @@ async function geocodeAddress(addr){
   return { lat:parseFloat(arr[0].lat), lng:parseFloat(arr[0].lon) };
 }
 let geocoding=false;
-async function batchGeocodeApartments(){
+async function batchGeocodeApartments(forceAll){
   if(geocoding) return;
-  const targets=overviewApartments().filter(r=>(!Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng))) && (r.address||'').trim());
-  if(!targets.length){ toast('未取得（住所あり）の集合住宅はありません'); return; }
-  if(!confirm(`${targets.length}件の集合住宅をジオコーディングします（約${Math.ceil(targets.length*1.1)}秒）。住所をOpenStreetMapに送信します。実行しますか?`)) return;
+  const targets=overviewApartments().filter(r=>{
+    if(!(r.address||'').trim()) return false;
+    if(forceAll) return true;   // 座標済も含めて全件再取得
+    return !Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng));
+  });
+  if(!targets.length){ toast(forceAll?'住所のある集合住宅がありません':'未取得（住所あり）の集合住宅はありません'); return; }
+  const verb=forceAll?'全件再取得':'ジオコーディング';
+  if(!confirm(`${targets.length}件の集合住宅を${verb}します（約${Math.ceil(targets.length*1.1)}秒）。住所をOpenStreetMapに送信します。実行しますか?`)) return;
   geocoding=true;
-  const btn=$('#geocodeBtn'); if(btn){ btn.disabled=true; }
+  const btns=[$('#geocodeBtn'),$('#geocodeAllBtn')]; btns.forEach(b=>b&&(b.disabled=true));
   let ok=0, fail=0;
   for(let i=0;i<targets.length;i++){
     const r=targets[i];
@@ -536,7 +542,7 @@ async function batchGeocodeApartments(){
     await new Promise(res=>setTimeout(res,1100));   // Nominatim レート制限（1req/秒）
   }
   geocoding=false;
-  if(btn){ btn.disabled=false; }
+  btns.forEach(b=>b&&(b.disabled=false));
   toast(`ジオコーディング完了: 成功${ok} / 失敗${fail}`);
   initOverviewMap();   // 取得した座標でピンを再描画
 }
