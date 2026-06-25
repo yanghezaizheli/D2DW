@@ -482,6 +482,8 @@ function updateBfBadges(){
 }
 function renderBlockList(){
   const el=$('#blockList'); el.innerHTML='';
+  // 集合住宅種別で絞り込み時は、区域カードでなく該当建物（親カード）一覧を表示
+  if(aptPinMode()){ renderAptList(el); return; }
   const arr=filteredBlocks();
   arr.forEach(b=>{
     const lv=filteredLeaves(b), due=lv.filter(r=>r.is_due).length;
@@ -507,10 +509,52 @@ function buildingDue(r){
   if(r.kind==='集合住宅') return state.stats.filter(c=>c.parent_id===r.place_id && c.is_due).length;
   return r.is_due?1:0;
 }
+function buildingTotal(r){
+  return r.kind==='集合住宅' ? state.stats.filter(c=>c.parent_id===r.place_id).length : 1;
+}
 async function openAptFromMap(r){
   state.curBlock=r.block_id; subscribeBlock(r.block_id);
   if(r.kind==='集合住宅') openApt(r.place_id);
   else openRecord(r.place_id,'block');
+}
+// 絞り込み条件に合致する集合住宅の親カード（タウンハウス等の単体含む）
+function filteredApartments(){
+  const selSet=new Set([...bf.types].filter(t=>APT_PIN_TYPES.includes(t)));
+  const q=bf.q.trim().toLowerCase();
+  const arr=state.stats.filter(r=>{
+    if(r.parent_id || r.kind==='号室') return false;
+    if(!selSet.has(placeFineType(r))) return false;
+    const b=state.blocks.find(x=>x.id===r.block_id);
+    if(bf.areas.size && !bf.areas.has((b&&b.area)||'(未分類)')) return false;
+    if(q){
+      const hay=`${r.display_name||''} ${r.label||''} ${b?b.name:''} ${b?b.code:''} ${b?b.area:''}`.toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  arr.sort((a,c)=>{
+    const ba=state.blocks.find(x=>x.id===a.block_id), bc=state.blocks.find(x=>x.id===c.block_id);
+    return areaRank(ba&&ba.area)-areaRank(bc&&bc.area)
+      || String(ba?ba.name:'').localeCompare(String(bc?bc.name:''),'ja',{numeric:true})
+      || String(a.display_name||'').localeCompare(String(c.display_name||''),'ja',{numeric:true});
+  });
+  return arr;
+}
+function renderAptList(el){
+  const arr=filteredApartments();
+  arr.forEach(r=>{
+    const total=buildingTotal(r), due=buildingDue(r);
+    const cls=due>0?'b-green':'b-blue';
+    const b=state.blocks.find(x=>x.id===r.block_id);
+    const t=placeFineType(r);
+    const div=document.createElement('div'); div.className='card blockcard'; div.onclick=()=>openAptFromMap(r);
+    const detail = r.kind==='集合住宅' ? `全 <b>${total}</b> 室 / 今訪問可 <b>${due}</b>` : `今訪問可 <b>${due}</b>`;
+    div.innerHTML=`<div class="main"><div class="name">${esc(r.display_name||'(建物)')} <span class="badge ${cls}">${due>0?'訪問可能 '+due:'対象なし'}</span></div>
+      <div class="meta">${esc(BLK_FINE_LABEL[t]||t)} ・ ${esc(b?b.name:'')} ・ ${detail}</div></div><div class="chev">›</div>`;
+    el.appendChild(div);
+  });
+  $('#bfCount').textContent=`${arr.length} 件表示中（建物）`;
+  drawBroadPins(filteredBlocks());   // 地図は建物個別ピン（drawAptPins）に切替済み
 }
 // 戸の細分類（号室は親=集合住宅の種別で判定）
 function leafFineType(r){
