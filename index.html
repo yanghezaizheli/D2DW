@@ -484,7 +484,7 @@ function renderBlockList(){
   const el=$('#blockList'); el.innerHTML='';
   const arr=filteredBlocks();
   arr.forEach(b=>{
-    const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
+    const lv=filteredLeaves(b), due=lv.filter(r=>r.is_due).length;
     const cls=due>0?'b-green':'b-blue';
     const div=document.createElement('div'); div.className='card blockcard'; div.onclick=()=>openBlock(b.id);
     div.innerHTML=`<div class="main"><div class="name">${esc(b.name)} <span class="badge ${cls}">${due>0?'訪問可能 '+due:'対象なし'}</span></div>
@@ -512,12 +512,18 @@ async function openAptFromMap(r){
   if(r.kind==='集合住宅') openApt(r.place_id);
   else openRecord(r.place_id,'block');
 }
-// 区域ピンの訪問可能数。種別フィルタ時はその種別のカードのみ集計（集合住宅の号室を除外）。
-function blockDueCount(b){
-  const lv=leaves(b.id);
-  if(!bf.types.size) return lv.filter(r=>r.is_due).length;
-  return lv.filter(r=>r.is_due && bf.types.has(placeFineType(r))).length;
+// 戸の細分類（号室は親=集合住宅の種別で判定）
+function leafFineType(r){
+  if(r.kind==='号室'){ const p=state.byId[r.parent_id]; return p?placeFineType(p):''; }
+  return placeFineType(r);
 }
+// 種別フィルタを適用した区域内の戸。フィルタ無しは全戸。
+function filteredLeaves(b){
+  const lv=leaves(b.id);
+  if(!bf.types.size) return lv;
+  return lv.filter(r=>bf.types.has(leafFineType(r)));
+}
+function blockDueCount(b){ return filteredLeaves(b).filter(r=>r.is_due).length; }
 let broadMarkers=[];
 function drawBroadPins(blocks){
   if(!broadMap) return;
