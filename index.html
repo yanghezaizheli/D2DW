@@ -148,7 +148,7 @@
 
   <!-- 号室一覧 -->
   <section id="s-apt" class="screen">
-    <div class="bar"><button class="back" data-go="block">← 区域</button><h1 id="aptTitle"></h1></div>
+    <div class="bar"><button class="back" id="aptBack">← 区域</button><h1 id="aptTitle"></h1></div>
     <div class="hint" id="aptInfo"></div>
     <div class="sectiontitle">号室</div>
     <div id="unitList" class="list"></div>
@@ -519,6 +519,11 @@ function detailSvg(W,H){
 /* ---------- 画面4: 号室 ---------- */
 function unitLabelNum(r){ const n=parseInt(String(r.label||'').replace(/[^0-9]/g,''),10); return isNaN(n)?0:n; }
 async function openApt(id){
+  // 全画面地図から開いた場合に備えて復帰先を保存
+  if(state.fullMap==='detailMap' && detailMap){
+    const center=detailMap.getCenter();
+    state.aptReturnMapView={id:'detailMap',center:[center.lat,center.lng],zoom:detailMap.getZoom()};
+  } else { state.aptReturnMapView=null; }
   state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
   const tlabel=bldgLabel(apt);
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">${tlabel}</span>`;
@@ -623,6 +628,12 @@ function rerender(){
 
 /* ---------- 共通 ---------- */
 document.querySelectorAll('[data-go]').forEach(b=> b.addEventListener('click', ()=>go(b.dataset.go)));
+$('#aptBack').addEventListener('click', ()=>{
+  const mapView = state.aptReturnMapView;
+  state.aptReturnMapView = null;
+  go('block');
+  if(mapView) restoreMapView(mapView);
+});
 document.querySelectorAll('[data-map-full]').forEach(b=> b.addEventListener('click', ()=>enterMapFullscreen(b.dataset.mapFull)));
 $('#exitMapFullBtn').addEventListener('click', exitMapFullscreen);
 document.addEventListener('keydown', e=>{ if(e.key==='Escape') exitMapFullscreen(); });
