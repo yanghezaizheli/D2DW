@@ -427,9 +427,12 @@ async function openBlock(id){
   subscribeBlock(id);   // この区域の更新だけリアルタイム購読
   renderPlaceList(id); go('block'); setTimeout(()=>initDetailMap(id),60);
   await refreshBlockStats(id);   // 広域画面で待機していた端末も、区域に入る時点で最新化する
+  if(cur!=='block' || state.curBlock!==id){ renderBroad(); return; }  // 離脱済みなら地図を触らない
   const fresh=leaves(id), freshDue=fresh.filter(r=>r.is_due).length;
   $('#blockProgress').textContent=`各戸カード（全 ${fresh.length} 戸 / 訪問可能 ${freshDue} / 対象外 ${fresh.length-freshDue}）`;
-  renderPlaceList(id); initDetailMap(id); renderBroad();
+  renderPlaceList(id);
+  if(detailMap) drawPins(id); else initDetailMap(id);  // 既存マップはピン更新のみ（再初期化しない）
+  renderBroad();
 }
 // 集合住宅の種別コード → 表示ラベル
 const BLDG_TYPE_LABEL={'ST-M':'階段','EV-M':'エレベーター','AL-M':'オートロック'};
