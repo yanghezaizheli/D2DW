@@ -27,6 +27,16 @@
   .rightpanel .panel{padding:14px;margin-bottom:14px}
   .rightpanel .grid{grid-template-columns:1fr}
   .side-h{font-size:12px;color:var(--sub);font-weight:700;margin:10px 4px 6px}
+  .blocksearch{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;font-size:13px}
+  .areagroup{margin:6px 0}
+  .areahead{display:flex;align-items:center;gap:6px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:#f6faf7;cursor:pointer;user-select:none}
+  .areahead:hover{background:#eef5f0}
+  .areahead .ar{flex:1;font-size:13px;font-weight:700}
+  .areahead .as{font-size:11px;color:var(--sub)}
+  .areahead .caret{font-size:11px;color:var(--sub);transition:transform .15s}
+  .areagroup.collapsed .caret{transform:rotate(-90deg)}
+  .areagroup.collapsed .areabody{display:none}
+  .areabody{padding:4px 0 2px 8px}
   .blockitem{padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin:6px 0;cursor:pointer;background:#fff}
   .blockitem:hover{background:#f0f6f2}
   .blockitem.sel{border-color:var(--brand);background:#eaf4ee}
@@ -124,6 +134,7 @@
     <div class="layout">
       <aside class="sidebar">
         <div class="side-h">区域一覧</div>
+        <input id="blockSearch" class="blocksearch" type="search" placeholder="🔍 区域名・エリアで検索" autocomplete="off">
         <div id="blockList"></div>
         <div class="side-h">管理</div>
         <button class="navbtn" id="navNewBlock">新規区域作成</button>
@@ -148,8 +159,14 @@ const SUPABASE_ANON_KEY ='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhY
 const $ = s => document.querySelector(s);
 const screens = ['setup','login','loading','main'];
 function go(name){ screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); }
-let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editingRoomId:null, editMode:false, editSel:null, fullPinMap:false, _pins:[] };
+let sb, state={ user:null, role:null, blocks:[], stats:[], byId:{}, curBlock:null, view:'block', editingPlaceId:null, editingPlace:null, editingRoomId:null, editMode:false, editSel:null, fullPinMap:false, _pins:[], blockQuery:'', collapsedAreas:null };
 let detailMap=null, overviewMap=null;
+
+/* エリア番号→名（昇順表示・グルーピング用）。blocks.area にはこの「名」が入る想定。 */
+const AREA_ORDER=['長住','長丘','皿山','柳河内','寺塚','大池','多賀','野間','玉川町','大楠','高宮','市崎','平和'];
+function areaRank(name){ const i=AREA_ORDER.indexOf(name); return i<0?999:i; }
+function loadCollapsedAreas(){ if(state.collapsedAreas) return state.collapsedAreas; try{ state.collapsedAreas=new Set(JSON.parse(localStorage.getItem('d2dw_admin_collapsed_areas')||'[]')); }catch(e){ state.collapsedAreas=new Set(); } return state.collapsedAreas; }
+function saveCollapsedAreas(){ try{ localStorage.setItem('d2dw_admin_collapsed_areas', JSON.stringify([...loadCollapsedAreas()])); }catch(e){} }
 
 /* ---------- 共通ヘルパ ---------- */
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -241,6 +258,7 @@ $('#reloadBtn').addEventListener('click', async ()=>{ try{ await reloadData(); r
 $('#sideToggleBtn').addEventListener('click', toggleSidebar);
 $('#navNewBlock').addEventListener('click', ()=>{ state.view='newBlock'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); });
 $('#navUsers').addEventListener('click', ()=>{ state.view='users'; state.curBlock=null; state.editingRoomId=null; renderSidebar(); renderContent(); });
+$('#blockSearch').addEventListener('input', e=>{ state.blockQuery=e.target.value; renderSidebar(); });
 
 function toggleSidebar(){
   const closed=document.body.classList.toggle('sidebar-collapsed');
@@ -262,14 +280,45 @@ function renderSidebar(){
   allDiv.innerHTML=`<div class="bn">全体カード</div><div class="bs">全${allTop.length}戸 / 訪問可${allDue} / 区域${state.blocks.length}</div>`;
   allDiv.onclick=()=>{ state.view='overview'; state.curBlock=null; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
   el.appendChild(allDiv);
+
+  const q=(state.blockQuery||'').trim().toLowerCase();
+  const collapsed=loadCollapsedAreas();
+  // 区域をエリアでグルーピング
+  const groups=new Map();
   state.blocks.forEach(b=>{
-    const lv=state.stats.filter(r=>r.block_id===b.id && (r.kind==='戸建て'||r.kind==='号室'));
-    const due=lv.filter(r=>r.is_due).length;
-    const div=document.createElement('div');
-    div.className='blockitem'+(state.view==='block'&&state.curBlock===b.id?' sel':'');
-    div.innerHTML=`<div class="bn">${esc(b.name||'(無名区域)')}</div><div class="bs">区域 ${esc(b.code||'')} ・ 全${lv.length}戸 / 訪問可${due}</div>`;
-    div.onclick=()=>{ state.view='block'; state.curBlock=b.id; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
-    el.appendChild(div);
+    if(q && !((b.name||'').toLowerCase().includes(q) || (b.code||'').toLowerCase().includes(q) || (b.area||'').toLowerCase().includes(q))) return;
+    const key=b.area||'(未分類)';
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(b);
+  });
+  const areaKeys=[...groups.keys()].sort((a,c)=>areaRank(a)-areaRank(c) || a.localeCompare(c,'ja'));
+  if(!areaKeys.length){ const e=document.createElement('div'); e.className='blockitem'; e.style.cursor='default'; e.innerHTML='<div class="bs">該当する区域がありません</div>'; el.appendChild(e); }
+
+  areaKeys.forEach(area=>{
+    const blks=groups.get(area).sort((a,c)=>(a.name||'').localeCompare(c.name||'','ja',{numeric:true}));
+    const due=state.stats.filter(r=>blks.some(b=>b.id===r.block_id) && (r.kind==='戸建て'||r.kind==='号室') && r.is_due).length;
+    // 検索中は強制展開。それ以外は localStorage の折りたたみ状態に従う。
+    const isCollapsed = q ? false : collapsed.has(area);
+    const grp=document.createElement('div');
+    grp.className='areagroup'+(isCollapsed?' collapsed':'');
+    const head=document.createElement('div');
+    head.className='areahead';
+    head.innerHTML=`<span class="caret">▼</span><span class="ar">${esc(area)}</span><span class="as">区域${blks.length} / 可${due}</span>`;
+    head.onclick=()=>{ const c=loadCollapsedAreas(); if(c.has(area)) c.delete(area); else c.add(area); saveCollapsedAreas(); renderSidebar(); };
+    grp.appendChild(head);
+    const body=document.createElement('div');
+    body.className='areabody';
+    blks.forEach(b=>{
+      const lv=state.stats.filter(r=>r.block_id===b.id && (r.kind==='戸建て'||r.kind==='号室'));
+      const bdue=lv.filter(r=>r.is_due).length;
+      const div=document.createElement('div');
+      div.className='blockitem'+(state.view==='block'&&state.curBlock===b.id?' sel':'');
+      div.innerHTML=`<div class="bn">${esc(b.name||'(無名区域)')}</div><div class="bs">区域 ${esc(b.code||'')} ・ 全${lv.length}戸 / 訪問可${bdue}</div>`;
+      div.onclick=()=>{ state.view='block'; state.curBlock=b.id; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null; renderSidebar(); renderContent(); };
+      body.appendChild(div);
+    });
+    grp.appendChild(body);
+    el.appendChild(grp);
   });
   $('#navUsers').classList.toggle('sel', state.view==='users');
   $('#navNewBlock').classList.toggle('sel', state.view==='newBlock');
