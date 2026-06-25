@@ -522,11 +522,13 @@ function detailSvg(W,H){
 /* ---------- 画面4: 号室 ---------- */
 function unitLabelNum(r){ const n=parseInt(String(r.label||'').replace(/[^0-9]/g,''),10); return isNaN(n)?0:n; }
 async function openApt(id){
-  // 全画面地図から開いた場合に備えて復帰先を保存
+  // 全画面地図から開いた場合に備えて復帰先を保存。
+  // 記録保存後の再描画でも openApt が呼ばれるが、その時点では fullMap が解除済みのため
+  // 既存の保存値を上書き・消去しない（クリアは #aptBack 使用時のみ）。
   if(state.fullMap==='detailMap' && detailMap){
     const center=detailMap.getCenter();
     state.aptReturnMapView={id:'detailMap',center:[center.lat,center.lng],zoom:detailMap.getZoom()};
-  } else { state.aptReturnMapView=null; }
+  }
   state.curApt=id; const apt=state.byId[id], kids=childrenOf(id), due=kids.filter(k=>k.is_due).length;
   const tlabel=bldgLabel(apt);
   $('#aptTitle').innerHTML=`${esc(apt.display_name||'')} <span class="sub">${tlabel}</span>`;
