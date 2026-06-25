@@ -1,6 +1,6 @@
 /* D2DW Service Worker — アプリシェルのオフラインキャッシュ
    バージョンを上げると古いキャッシュを破棄して更新します。 */
-const CACHE = 'd2dw-v18';
+const CACHE = 'd2dw-v19';
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
   './assets/images/icon-192.png', './assets/images/icon-512.png', './assets/images/apple-touch-icon.png',
