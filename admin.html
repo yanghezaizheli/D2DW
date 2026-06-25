@@ -312,6 +312,9 @@ function parseLatLngInput(raw){
   if(!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   return { lat, lng };
 }
+function formatLatLng(b){
+  return (b && b.lat!=null && b.lng!=null) ? `${b.lat}, ${b.lng}` : '';
+}
 async function createBlock(){
   const name=$('#nbName').value.trim();
   const code=$('#nbCode').value.trim();
@@ -329,6 +332,19 @@ async function createBlock(){
   await reloadData();
   state.view='block'; state.curBlock=data.id; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
   renderSidebar(); renderContent();
+}
+async function saveBlockLatLng(){
+  if(!state.curBlock) return;
+  const latLng=parseLatLngInput($('#blockLatLng').value);
+  if(!latLng) return toast('代表座標は「緯度, 経度」で入力してください');
+  const btn=$('#blockLatLngSave'); btn.disabled=true;
+  const { error } = await sb.from('blocks').update({ lat:latLng.lat, lng:latLng.lng }).eq('id', state.curBlock);
+  btn.disabled=false;
+  if(error){ toast('代表座標の保存失敗: '+errText(error)); return; }
+  const b=state.blocks.find(x=>x.id===state.curBlock);
+  if(b){ b.lat=latLng.lat; b.lng=latLng.lng; }
+  toast('代表座標を保存しました');
+  renderSidebar();
 }
 
 function renderOverviewPanel(){
@@ -408,6 +424,11 @@ function renderCardPanel(){
   }).join('');
   $('#content').innerHTML=
     `<h2 class="title">${esc(b?.name||'')} <span class="muted" style="font-size:13px">区域 ${esc(b?.code||'')}</span></h2>`+
+    `<div class="panel"><h3>区域情報</h3>`+
+      `<label class="fld wide">代表座標<input id="blockLatLng" inputmode="decimal" placeholder="例: 33.551234, 130.401234" value="${esc(formatLatLng(b))}"></label>`+
+      `<div class="hint" style="margin-top:10px">スマホ側の広域地図ピン用です。「緯度, 経度」の順で入力してください。空欄で保存すると広域地図ピンを非表示にできます。</div>`+
+      `<div class="actions"><button class="btn primary" id="blockLatLngSave">代表座標を保存</button></div>`+
+    `</div>`+
     `<div class="panel"><h3>詳細地図（ピン配置）</h3>`+
       `<div class="actions" style="margin-top:0;margin-bottom:10px">`+
         `<button class="btn" id="pinEditBtn">${state.editMode?'完了':'📍 ピン編集'}</button>`+
@@ -453,6 +474,7 @@ function renderCardPanel(){
       (rows || '<div class="empty">この区域にはカードがありません。上のフォームから追加できます。</div>')+
       (places.length?`<div class="actions"><button class="btn danger" id="delAll">この区域の全カード削除</button></div>`:'')+
     `</div>`;
+  $('#blockLatLngSave').addEventListener('click', saveBlockLatLng);
   $('#pinEditBtn').addEventListener('click', toggleEdit);
   $('#pinFullBtn').addEventListener('click', enterPinFullscreen);
   $('#mapSwapBtn').addEventListener('click', ()=>$('#mapFile').click());
