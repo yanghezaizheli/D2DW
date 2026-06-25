@@ -499,16 +499,47 @@ function renderBroad(){
   updateBfBadges();
   renderBlockList();
 }
+// 集合住宅として個別ピン表示する種別（戸建て・店・会社は対象外＝件数に含めない）
+const APT_PIN_TYPES=['AL-M','EV-M','ST-M','メゾネット','タウンハウス'];
+function aptPinMode(){ return [...bf.types].some(t=>APT_PIN_TYPES.includes(t)); }
+// 建物の訪問可能数（集合住宅は号室の合計、タウンハウス等は自身）
+function buildingDue(r){
+  if(r.kind==='集合住宅') return state.stats.filter(c=>c.parent_id===r.place_id && c.is_due).length;
+  return r.is_due?1:0;
+}
+async function openAptFromMap(r){
+  state.curBlock=r.block_id; subscribeBlock(r.block_id);
+  if(r.kind==='集合住宅') openApt(r.place_id);
+  else openRecord(r.place_id,'block');
+}
 let broadMarkers=[];
 function drawBroadPins(blocks){
   if(!broadMap) return;
   broadMarkers.forEach(m=>m.remove()); broadMarkers=[];
+  if(aptPinMode()){ drawAptPins(blocks||filteredBlocks()); return; }
   (blocks||state.blocks).filter(b=>b.lat&&b.lng).forEach(b=>{
     const lv=leaves(b.id), due=lv.filter(r=>r.is_due).length;
     const color=due>0?'#2e9e6b':'#3b73c4';
     const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
       html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
     const m=L.marker([b.lat,b.lng],{icon}).addTo(broadMap).on('click',()=>openBlock(b.id)).bindTooltip(b.name,{direction:'top',offset:[0,-24]});
+    broadMarkers.push(m);
+  });
+}
+// 集合住宅種別フィルタ時: 建物を住所(緯度経度)に基づき個別ピン表示
+function drawAptPins(blocks){
+  const allowed=new Set((blocks||[]).map(b=>b.id));
+  const selSet=new Set([...bf.types].filter(t=>APT_PIN_TYPES.includes(t)));
+  state.stats.forEach(r=>{
+    if(!allowed.has(r.block_id)) return;
+    if(!selSet.has(placeFineType(r))) return;
+    if(!(Number.isFinite(Number(r.lat))&&Number.isFinite(Number(r.lng)))) return;
+    const due=buildingDue(r);
+    const color=due>0?'#2e9e6b':'#3b73c4';
+    const icon=L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,26],
+      html:`<div class="pin" style="background:${color}"><span>${due||'✓'}</span></div>`});
+    const m=L.marker([Number(r.lat),Number(r.lng)],{icon}).addTo(broadMap)
+      .on('click',()=>openAptFromMap(r)).bindTooltip(r.display_name||'(建物)',{direction:'top',offset:[0,-24]});
     broadMarkers.push(m);
   });
 }

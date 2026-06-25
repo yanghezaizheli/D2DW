@@ -421,7 +421,11 @@ function renderOverviewPanel(){
     `</div>`+
     `<div class="panel"><h3>全体マップ <button class="mapfull" id="overviewFullBtn" style="font-size:12px;padding:6px 12px;float:right">全画面</button></h3>`+
       `<div id="overviewMap"></div>`+
-      `<div class="hint" style="margin-top:10px">代表座標が設定済みの区域を表示します。ピンをクリックすると区域編集へ移動します。</div>`+
+      `<div class="hint" style="margin-top:10px">青=区域代表座標 / 緑=集合住宅。集合住宅ピンはドラッグで位置を補正・保存できます。クリックで区域編集へ移動します。</div>`+
+      `<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">`+
+        `<button id="geocodeBtn" class="mapfull" style="font-size:13px;padding:8px 14px">住所から座標取得</button>`+
+        `<span id="geocodeStat" class="hint"></span>`+
+      `</div>`+
     `</div>`+
     `<div class="panel"><h3>区域別サマリー</h3>`+
       (blockRows.map(r=>
@@ -440,28 +444,93 @@ function openBlockFromOverview(blockId){
   state.view='block'; state.curBlock=blockId; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
   renderSidebar(); renderContent();
 }
+function overviewApartments(){
+  return state.stats.filter(r=>r.kind==='集合住宅' && !r.parent_id);
+}
 function initOverviewMap(){
   const el=$('#overviewMap');
   if(!el) return;
   if(overviewMap){ overviewMap.remove(); overviewMap=null; }
   const mapped=state.blocks.filter(b=>Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)));
-  if(!mapped.length){
-    el.innerHTML='<div class="empty" style="padding:16px">代表座標が設定された区域がありません。</div>';
+  const apts=overviewApartments().filter(r=>Number.isFinite(Number(r.lat)) && Number.isFinite(Number(r.lng)));
+  if(!mapped.length && !apts.length){
+    el.innerHTML='<div class="empty" style="padding:16px">座標が設定された区域・集合住宅がありません。</div>';
+    wireGeocodeBtn(); wireOverviewFull();
     return;
   }
   overviewMap=L.map('overviewMap',{zoomControl:true,attributionControl:false});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(overviewMap);
   const bounds=[];
+  // 区域代表座標（青・既定アイコン）
   mapped.forEach(b=>{
     const lat=Number(b.lat), lng=Number(b.lng);
     bounds.push([lat,lng]);
-    const marker=L.marker([lat,lng]).addTo(overviewMap).bindTooltip(`${b.name||'(無名区域)'}`,{direction:'top'});
-    marker.on('click',()=>openBlockFromOverview(b.id));
+    L.marker([lat,lng]).addTo(overviewMap).bindTooltip(`${b.name||'(無名区域)'}`,{direction:'top'})
+      .on('click',()=>openBlockFromOverview(b.id));
+  });
+  // 集合住宅（緑・ドラッグで位置補正→保存）
+  apts.forEach(r=>{
+    const lat=Number(r.lat), lng=Number(r.lng);
+    bounds.push([lat,lng]);
+    const icon=L.divIcon({className:'',iconSize:[20,20],iconAnchor:[10,10],
+      html:`<div style="width:18px;height:18px;border-radius:50%;background:#2e9e6b;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`});
+    const m=L.marker([lat,lng],{icon,draggable:true}).addTo(overviewMap)
+      .bindTooltip(`${r.display_name||'(建物)'}（ドラッグで移動）`,{direction:'top'});
+    m.on('dragend',async ()=>{ const ll=m.getLatLng(); await saveAptCoord(r.place_id, ll.lat, ll.lng); });
+    m.on('click',()=>openBlockFromOverview(r.block_id));
   });
   overviewMap.fitBounds(bounds,{padding:[28,28],maxZoom:16});
   setTimeout(()=>overviewMap&&overviewMap.invalidateSize(),80);
-  const fullBtn=$('#overviewFullBtn');
-  if(fullBtn) fullBtn.addEventListener('click',enterOverviewFullscreen);
+  wireGeocodeBtn(); wireOverviewFull();
+}
+function wireOverviewFull(){ const fullBtn=$('#overviewFullBtn'); if(fullBtn) fullBtn.onclick=enterOverviewFullscreen; }
+function wireGeocodeBtn(){ const b=$('#geocodeBtn'); if(b) b.onclick=batchGeocodeApartments; updateGeocodeStat(); }
+function updateGeocodeStat(){
+  const el=$('#geocodeStat'); if(!el) return;
+  const apts=overviewApartments();
+  const done=apts.filter(r=>Number.isFinite(Number(r.lat))&&Number.isFinite(Number(r.lng))).length;
+  const need=apts.filter(r=>(!Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng))) && (r.address||'').trim()).length;
+  el.textContent=`集合住宅 ${apts.length}件 / 座標済 ${done} / 未取得(住所あり) ${need}`;
+}
+async function saveAptCoord(placeId, lat, lng){
+  const { error } = await sb.from('places').update({ lat, lng }).eq('id', placeId);
+  if(error){ toast('座標保存失敗: '+errText(error)); return; }
+  const row=state.stats.find(r=>r.place_id===placeId); if(row){ row.lat=lat; row.lng=lng; }
+  updateGeocodeStat();
+  toast('座標を保存しました');
+}
+// Nominatim で1件ジオコーディング（日本・1件）
+async function geocodeAddress(addr){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=jp&q='+encodeURIComponent(addr);
+  const res=await fetch(url,{headers:{'Accept':'application/json'}});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const arr=await res.json();
+  if(!arr.length) return null;
+  return { lat:parseFloat(arr[0].lat), lng:parseFloat(arr[0].lon) };
+}
+let geocoding=false;
+async function batchGeocodeApartments(){
+  if(geocoding) return;
+  const targets=overviewApartments().filter(r=>(!Number.isFinite(Number(r.lat))||!Number.isFinite(Number(r.lng))) && (r.address||'').trim());
+  if(!targets.length){ toast('未取得（住所あり）の集合住宅はありません'); return; }
+  if(!confirm(`${targets.length}件の集合住宅をジオコーディングします（約${Math.ceil(targets.length*1.1)}秒）。住所をOpenStreetMapに送信します。実行しますか?`)) return;
+  geocoding=true;
+  const btn=$('#geocodeBtn'); if(btn){ btn.disabled=true; }
+  let ok=0, fail=0;
+  for(let i=0;i<targets.length;i++){
+    const r=targets[i];
+    if($('#geocodeStat')) $('#geocodeStat').textContent=`取得中… ${i+1}/${targets.length}（成功${ok}/失敗${fail}）`;
+    try{
+      const geo=await geocodeAddress(r.address.trim());
+      if(geo){ await saveAptCoord(r.place_id, geo.lat, geo.lng); ok++; }
+      else fail++;
+    }catch(e){ fail++; console.warn('geocode failed', r.address, e); }
+    await new Promise(res=>setTimeout(res,1100));   // Nominatim レート制限（1req/秒）
+  }
+  geocoding=false;
+  if(btn){ btn.disabled=false; }
+  toast(`ジオコーディング完了: 成功${ok} / 失敗${fail}`);
+  initOverviewMap();   // 取得した座標でピンを再描画
 }
 function enterOverviewFullscreen(){
   if(!$('#overviewMap')) return;
