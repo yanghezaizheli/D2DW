@@ -417,6 +417,7 @@ function go(name){
   if(name!=='block' && document.body.classList.contains('card-manage')){  // カード管理から離れたら2ペイン解除
     document.body.classList.remove('card-manage'); $('#blockManagePanel').style.display='none';
   }
+  if(name==='broad') unsubscribeBlock();   // 広域に戻ったら区域購読を解除（不要なメッセージ受信を止める）
   screens.forEach(s=>$('#s-'+s).classList.toggle('active', s===name)); cur=name; window.scrollTo(0,0);
 }
 let cur='loading';
@@ -570,7 +571,7 @@ async function onLogin(user){
   console.log('user role:', state.role);
   $('#adminBtn').style.display = state.role === 'admin' ? '' : 'none';
   await loadAll();
-  go('broad'); initBroad(); subscribeRealtime();
+  go('broad'); initBroad();   // リアルタイムは区域を開いたときに購読（subscribeBlock）
 }
 
 /* ---------- データ取得（＋オフライン用キャッシュ） ---------- */
@@ -710,6 +711,7 @@ function openBlock(id){
   $('#blockTitle').innerHTML=`${esc(b.name)} <span class="sub">区域 ${esc(b.code||'')}</span>`;
   const lv=leaves(id), due=lv.filter(r=>r.is_due).length;
   $('#blockProgress').textContent=`各戸カード（全 ${lv.length} 戸 / 訪問可能 ${due} / 対象外 ${lv.length-due}）`;
+  subscribeBlock(id);   // この区域の更新だけリアルタイム購読
   renderPlaceList(id); go('block'); setTimeout(()=>initDetailMap(id),60);
 }
 // 集合住宅の種別コード → 表示ラベル
@@ -1526,12 +1528,22 @@ async function nbCreateBlock(){
 }
 
 /* ---------- リアルタイム同期 ---------- */
-function subscribeRealtime(){
-  sb.channel('rt-visits')
-    .on('postgres_changes', { event:'*', schema:'public', table:'visits' }, payload=>{
-      queuePlaceUpdate(payload.new?.place_id || payload.old?.place_id);   // 変わった戸だけ差分取得
-    })
+/* 区域単位のリアルタイム購読: 今見ている区域の visits だけを受信し、
+   1記録が全端末へ配信される fan-out（メッセージ数）を抑える。
+   visits.block_id（トリガーで自動設定）でサーバ側フィルタ。 */
+let rtChannel=null;
+function subscribeBlock(blockId){
+  unsubscribeBlock();
+  if(!blockId) return;
+  rtChannel = sb.channel('rt-block-'+blockId)
+    .on('postgres_changes',
+      { event:'*', schema:'public', table:'visits', filter:'block_id=eq.'+blockId },
+      payload=>{ queuePlaceUpdate(payload.new?.place_id || payload.old?.place_id); })
     .subscribe(status=>{ $('#rtState').textContent = status==='SUBSCRIBED' ? '●同期中' : '●'+status; });
+}
+function unsubscribeBlock(){
+  if(rtChannel){ sb.removeChannel(rtChannel); rtChannel=null; }
+  $('#rtState').textContent='●待機';
 }
 function rerender(){
   if(cur==='broad'){ renderBroad(); }

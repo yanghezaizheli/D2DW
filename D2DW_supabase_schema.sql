@@ -96,6 +96,35 @@ create index if not exists idx_visits_place    on visits(place_id);
 create index if not exists idx_visits_visited  on visits(place_id, visited_at desc);
 
 -- ============================================================
+-- 7.6) 区域単位リアルタイム購読のための visits.block_id
+--    アプリは「今見ている区域」だけを購読し、1記録が全端末へ配信される
+--    fan-out（Realtimeメッセージ数）を抑える。block_id はトリガーで自動設定。
+-- ============================================================
+alter table visits add column if not exists block_id uuid references blocks(id) on delete cascade;
+
+-- 既存データの backfill（place から区域を補完）
+update visits v set block_id = p.block_id
+  from places p where p.id = v.place_id and v.block_id is distinct from p.block_id;
+
+-- 挿入時に place_id から block_id を自動設定
+create or replace function public.set_visit_block_id() returns trigger
+language plpgsql as $$
+begin
+  if new.block_id is null then
+    select block_id into new.block_id from places where id = new.place_id;
+  end if;
+  return new;
+end; $$;
+drop trigger if exists trg_set_visit_block_id on visits;
+create trigger trg_set_visit_block_id before insert on visits
+  for each row execute function public.set_visit_block_id();
+
+create index if not exists idx_visits_block on visits(block_id);
+
+-- DELETE/UPDATE 時も block_id フィルタが効くよう old レコードに全列を含める
+alter table visits replica identity full;
+
+-- ============================================================
 -- 7.5) タイプ別の再訪間隔（visit_rules）＋ type 列
 --    「今訪問してよいか(is_due)」を前回結果×タイプの間隔で自動判定する。
 --    タイプ(-M=マンション): LDR=低密度住宅(戸建て＋小規模集合)
