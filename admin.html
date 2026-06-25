@@ -74,7 +74,8 @@
   .userrow .uacts{grid-column:1 / -1;display:flex;gap:8px}
   .userrow .uacts button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:9px;font-size:13px;font-weight:700;cursor:pointer}
   .userrow .uacts .del{color:var(--red)}
-  /* 詳細地図・ピン編集 */
+  /* 全体地図・詳細地図 */
+  #overviewMap{width:100%;height:420px;background:#dde3df;border-radius:10px}
   #detailMap{width:100%;height:520px;background:#dde3df;border-radius:10px}
   .mapfull{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer}
   .mapfull-close{display:none;position:fixed;right:16px;top:16px;z-index:3010;background:#fff;border:1px solid var(--line);
@@ -369,6 +370,10 @@ function renderOverviewPanel(){
       `<div class="row"><div><div class="nm">訪問拒否</div><div class="meta">訪問対象外として扱うカード</div></div><strong>${rejectTotal}</strong></div>`+
       `<div class="row"><div><div class="nm">集合住宅</div><div class="meta">親カード件数</div></div><strong>${aptTotal}</strong></div>`+
     `</div>`+
+    `<div class="panel"><h3>全体マップ</h3>`+
+      `<div id="overviewMap"></div>`+
+      `<div class="hint" style="margin-top:10px">代表座標が設定済みの区域を表示します。ピンをクリックすると区域編集へ移動します。</div>`+
+    `</div>`+
     `<div class="panel"><h3>区域別サマリー</h3>`+
       (blockRows.map(r=>
         `<div class="row"><div><div class="nm">${esc(r.b.name||'(無名区域)')}</div>`+
@@ -380,6 +385,31 @@ function renderOverviewPanel(){
     state.view='block'; state.curBlock=btn.dataset.openBlock; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
     renderSidebar(); renderContent();
   }));
+  initOverviewMap();
+}
+function openBlockFromOverview(blockId){
+  state.view='block'; state.curBlock=blockId; state.editingPlaceId=null; state.editingPlace=null; state.editingRoomId=null; state.editMode=false; state.editSel=null;
+  renderSidebar(); renderContent();
+}
+function initOverviewMap(){
+  const el=$('#overviewMap');
+  if(!el) return;
+  const mapped=state.blocks.filter(b=>Number.isFinite(Number(b.lat)) && Number.isFinite(Number(b.lng)));
+  if(!mapped.length){
+    el.innerHTML='<div class="empty" style="padding:16px">代表座標が設定された区域がありません。</div>';
+    return;
+  }
+  const map=L.map('overviewMap',{zoomControl:true,attributionControl:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  const bounds=[];
+  mapped.forEach(b=>{
+    const lat=Number(b.lat), lng=Number(b.lng);
+    bounds.push([lat,lng]);
+    const marker=L.marker([lat,lng]).addTo(map).bindTooltip(`${b.name||'(無名区域)'}`,{direction:'top'});
+    marker.on('click',()=>openBlockFromOverview(b.id));
+  });
+  map.fitBounds(bounds,{padding:[28,28],maxZoom:16});
+  setTimeout(()=>map.invalidateSize(),80);
 }
 
 /* ---------- カード管理 ---------- */
